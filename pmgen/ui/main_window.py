@@ -2,9 +2,7 @@ from __future__ import annotations
 import sys, os, re
 from fnmatch import fnmatchcase
 from PyQt6.QtWidgets import QFileDialog, QSpinBox
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-import traceback
 from datetime import datetime, timezone
 from typing import Optional
 from PyQt6.QtCore import (
@@ -21,12 +19,11 @@ from PyQt6.QtWidgets import (
     QDialog, QPushButton, QFrame, QLineEdit, QComboBox, QCheckBox, QSlider, QSpinBox, QDoubleSpinBox
 )
 
-import keyring
 import requests
 from collections import deque
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Static theme: pick ONE and it will never change with the OS
+# Static theme
 # ─────────────────────────────────────────────────────────────────────────────
 THEME = "dark"  # set to "light" for the light theme
 VERSION = "2.2.1"
@@ -171,200 +168,22 @@ def apply_static_theme(app: QApplication):
 BORDER_WIDTH = 8  # pixels for custom resize grip
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Auth / keyring helpers
+# Auth / keyring helpers (constant used by http_client)
 # ─────────────────────────────────────────────────────────────────────────────
 SERVICE_NAME = "PmGen"
 
 def _tz_offset_minutes() -> int:
-    """
-    Returns the local UTC offset in minutes (e.g., -240 for EDT).
-    Uses timezone-aware datetimes to avoid deprecation warnings on 3.13+.
-    """
     try:
         offset = datetime.now(timezone.utc).astimezone().utcoffset()
         return int(offset.total_seconds() // 60) if offset is not None else 0
     except Exception:
-        # Fallback using time module if anything weird happens
         import time as _t
         is_dst = _t.localtime().tm_isdst > 0 and _t.daylight
         seconds = -(_t.altzone if is_dst else _t.timezone)
         return int(seconds // 60)
 
-def _extract_request_verification_token(html: str) -> Optional[str]:
-    m = re.search(
-        r'name=[\'"]__RequestVerificationToken[\'"][^>]*value=[\'"]([^\'"]+)[\'"]',
-        html,
-        re.IGNORECASE | re.DOTALL,
-    )
-    return m.group(1) if m else None
-
-class LoginWorker(QObject):
-    finished = pyqtSignal(bool, str)  # success, message
-    def __init__(self, username: str, password: str):
-        super().__init__()
-        self.username = username
-        self.password = password
-
-    def run(self):
-        try:
-            sess = requests.Session()
-            base = "https://eservice.toshiba-solutions.com"
-            login_url = f"{base}/Account/LogOn?ReturnUrl=%2fDevice%2fError"
-
-            ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
-
-            # 1) GET login page to obtain CSRF + cookies
-            r1 = sess.get(
-                login_url,
-                headers={
-                    "User-Agent": ua,
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                    "Referer": f"{base}/",
-                },
-                timeout=20,
-            )
-            if r1.status_code != 200:
-                self.finished.emit(False, f"Login page error: HTTP {r1.status_code}")
-                return
-
-            token = _extract_request_verification_token(r1.text)
-            if not token:
-                self.finished.emit(False, "Could not find verification token.")
-                return
-
-            # 2) POST credentials with token
-            data = {
-                "UserName": self.username,
-                "Password": self.password,
-                "OneTimePassword": "",
-                "RememberMe2FA": "false",
-                "timeZoneOffSet": str(_tz_offset_minutes()),  # e.g., -240
-                "returnUrl": "/Device/Error",
-                "serial": "",
-                "__RequestVerificationToken": token,
-            }
-
-            r2 = sess.post(
-                f"{base}/Account/LogOn",
-                headers={
-                    "User-Agent": ua,
-                    "Accept": "*/*",
-                    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                    "X-Requested-With": "XMLHttpRequest",
-                    "Origin": base,
-                    "Referer": login_url,
-                },
-                data=data,
-                timeout=30,
-                allow_redirects=True,
-            )
-
-            # --- Robust success detection ---
-            auth_cookie_names = {
-                ".ASPXAUTH",
-                ".AspNet.ApplicationCookie",
-                ".AspNetCore.Cookies",
-                ".AspNetCore.Identity.Application",
-            }
-            have_auth_cookie = any(c in sess.cookies for c in auth_cookie_names)
-
-            final_url = r2.url or ""
-            left_login_page = "/Account/LogOn" not in final_url
-
-            json_success = None
-            json_msg = None
-            ctype = r2.headers.get("Content-Type", "")
-            if "application/json" in (ctype or "").lower():
-                try:
-                    js = r2.json()
-                    v = js.get("Success") if "Success" in js else js.get("success")
-                    if isinstance(v, bool):
-                        json_success = v
-                    json_msg = js.get("Message") or js.get("message")
-                except Exception:
-                    pass
-
-            success = False
-            reason = None
-            if json_success is True or have_auth_cookie or left_login_page:
-                success = True
-            elif json_success is False:
-                reason = json_msg or "Invalid username or password."
-            else:
-                # Probe a page assumed to require auth
-                probe = sess.get(f"{base}/Device/Error", headers={"User-Agent": ua, "Referer": base}, timeout=20)
-                if probe.status_code == 200 and ("Account/LogOn" not in (probe.url or "")):
-                    if ("name=\"UserName\"" not in probe.text) and ("name=\"Password\"" not in probe.text):
-                        success = True
-                    else:
-                        reason = "Invalid username or password."
-                else:
-                    if "/Account/LogOn" in (probe.url or ""):
-                        reason = "Invalid username or password."
-                    else:
-                        reason = f"Login failed (HTTP {probe.status_code})."
-
-            if success:
-                self.finished.emit(True, "Login successful.")
-            else:
-                if not reason:
-                    txt = (r2.text or "").lower()
-                    if "incorrect" in txt or "invalid" in txt:
-                        reason = "Invalid username or password."
-                    else:
-                        reason = "Login failed."
-                self.finished.emit(False, reason)
-        except requests.RequestException as e:
-            self.finished.emit(False, f"Network error: {e}")
-        except Exception as e:
-            self.finished.emit(False, f"Unexpected error: {e}")
-
-class AuthManager:
-    """
-    Handles persisted username (QSettings) and password (keyring).
-    """
-    SETTINGS_KEY_USERNAME = "auth/username"
-    SETTINGS_KEY_REMEMBER = "auth/remember"
-
-    def __init__(self):
-        self._settings = QSettings()
-
-    def set_username(self, username: str | None):
-        if username:
-            self._settings.setValue(self.SETTINGS_KEY_USERNAME, username)
-        else:
-            self._settings.remove(self.SETTINGS_KEY_USERNAME)
-
-    def get_username(self) -> str:
-        return self._settings.value(self.SETTINGS_KEY_USERNAME, "", str)
-
-    def set_remember(self, remember: bool):
-        self._settings.setValue(self.SETTINGS_KEY_REMEMBER, bool(remember))
-
-    def get_remember(self) -> bool:
-        return bool(self._settings.value(self.SETTINGS_KEY_REMEMBER, False, bool))
-
-    def save_password(self, username: str, password: str):
-        try:
-            keyring.set_password(SERVICE_NAME, username, password)
-        except Exception:
-            pass
-
-    def get_password(self, username: str) -> Optional[str]:
-        try:
-            return keyring.get_password(SERVICE_NAME, username)
-        except Exception:
-            return None
-
-    def delete_password(self, username: str):
-        try:
-            keyring.delete_password(SERVICE_NAME, username)
-        except Exception:
-            pass
-
 # ---------------------------- Drag Region ----------------------------
 class DragRegion(QWidget):
-    """Transparent expanding widget on the left/right of the toolbar to drag window."""
     def __init__(self, parent_window: QMainWindow):
         super().__init__(parent_window)
         self._win = parent_window
@@ -398,7 +217,6 @@ class DragRegion(QWidget):
 
 # ---------------------------- Draggable Title Label ----------------------------
 class TitleDragLabel(QLabel):
-    """Centered title that can drag the frameless window and toggle fullscreen on double-click."""
     def __init__(self, text: str, parent_window: QMainWindow):
         super().__init__(text, parent_window)
         self._win = parent_window
@@ -448,7 +266,6 @@ class TitleDragLabel(QLabel):
 
 # ---------------------------- Custom TitleBar for dialogs ----------------------------
 class DialogTitleBar(QWidget):
-    """A compact titlebar with app-like controls for dialogs."""
     def __init__(self, window: QDialog, title: str, icon_dir: str):
         super().__init__(window)
         self.setObjectName("DialogTitleBar")
@@ -463,9 +280,8 @@ class DialogTitleBar(QWidget):
         lbl = QLabel(title, self)
         lbl.setObjectName("DialogTitleLabel")
 
-        # Icons
         minimize_icon = os.path.join(icon_dir, "minimize.svg")
-        maximize_icon = os.path.join(icon_dir, "fullscreen.svg")  # reuse
+        maximize_icon = os.path.join(icon_dir, "fullscreen.svg")
         exit_icon = os.path.join(icon_dir, "exit.svg")
 
         btn_min = QToolButton(self); btn_min.setObjectName("DialogBtn")
@@ -482,7 +298,6 @@ class DialogTitleBar(QWidget):
         btn_close.setIcon(QIcon(exit_icon)); btn_close.setToolTip("Close")
         btn_close.clicked.connect(self._win.close)
 
-        # left stretch, center title, right controls
         layout.addWidget(lbl, 1, Qt.AlignmentFlag.AlignVCenter)
         right = QHBoxLayout()
         right.setContentsMargins(0, 0, 0, 0)
@@ -503,7 +318,6 @@ class DialogTitleBar(QWidget):
         else:
             self._win.showNormal()
 
-    # Drag to move dialog
     def mousePressEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
             self._dragging = True
@@ -528,7 +342,6 @@ class DialogTitleBar(QWidget):
 
 # ---------------------------- FramelessDialog base ----------------------------
 class FramelessDialog(QDialog):
-    """Reusable frameless dialog with our custom titlebar and content area."""
     def __init__(self, parent, title: str, icon_dir: str):
         super().__init__(parent, flags=Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool)
         self.setObjectName("FramelessDialogRoot")
@@ -608,14 +421,8 @@ class CustomMessageBox(FramelessDialog):
         dlg.exec()
         return dlg._clicked_role or "cancel"
 
+# ---------------------------- Output Highlighter ----------------------------
 class OutputHighlighter(QSyntaxHighlighter):
-    """
-    Lightweight colorizer for the plain-text report shown in the editor.
-    It recognizes the sections emitted by format_report():
-      - “Final Parts”, the “Most-Due Items” block, separator lines, and DUE bullets
-      - “Kit → PN × Qty” rows
-    """
-
     def __init__(self, parent_doc):
         super().__init__(parent_doc)
         self._build_formats()
@@ -631,31 +438,28 @@ class OutputHighlighter(QSyntaxHighlighter):
         return fmt
 
     def _build_formats(self):
-        # palette tuned for both light/dark stylesheets
-        self.fmt_header     = self._mkfmt("#7aa2f7", bold=True)   # section titles
-        self.fmt_rule       = self._mkfmt("#444444")              # "────" rules
-        self.fmt_muted      = self._mkfmt("#888888", italic=True) # parentheticals
-        self.fmt_kit_row    = self._mkfmt("#a6da95")              # “KIT → PN ×Q”
-        self.fmt_due_bullet = self._mkfmt("#f7768e", bold=True)   # “• … → DUE”
+        self.fmt_header     = self._mkfmt("#7aa2f7", bold=True)
+        self.fmt_rule       = self._mkfmt("#444444")
+        self.fmt_muted      = self._mkfmt("#888888", italic=True)
+        self.fmt_kit_row    = self._mkfmt("#a6da95")
+        self.fmt_due_bullet = self._mkfmt("#f7768e", bold=True)
         self.fmt_percentage = self._mkfmt("#f77600", bold=True)
-        self.fmt_label      = self._mkfmt("#c0caf5", bold=True)   # small labels
+        self.fmt_label      = self._mkfmt("#c0caf5", bold=True)
 
-        self.fmt_due_row_base = self._mkfmt("#bbbbbb")            # bullet, dashes, arrows
-        self.fmt_due_canon    = self._mkfmt("#1c94d5", bold=True) # color1: canon text
-        self.fmt_due_pct      = self._mkfmt("#e0af68", bold=True) # color2: percentage
-        self.fmt_due_flag     = self._mkfmt("#f7768e", bold=True) # color3: the word DUE
+        self.fmt_due_row_base = self._mkfmt("#bbbbbb")
+        self.fmt_due_canon    = self._mkfmt("#1c94d5", bold=True)
+        self.fmt_due_pct      = self._mkfmt("#e0af68", bold=True)
+        self.fmt_due_flag     = self._mkfmt("#f7768e", bold=True)
 
         self.fmt_header_line_base = self._mkfmt("#bfbfbf")
-        self.fmt_model_value      = self._mkfmt("#a6da95", bold=True)  # model name
-        self.fmt_serial_value     = self._mkfmt("#7dcfff", bold=True)  # serial
-        self.fmt_date_value       = self._mkfmt("#e0af68")             # date
+        self.fmt_model_value      = self._mkfmt("#a6da95", bold=True)
+        self.fmt_serial_value     = self._mkfmt("#7dcfff", bold=True)
+        self.fmt_date_value       = self._mkfmt("#e0af68")
 
-        # badges line (threshold + basis)
         self.fmt_badge_line_base  = self._mkfmt("#bfbfbf")
         self.fmt_thresh_value     = self._mkfmt("#e0af68", bold=True)
         self.fmt_basis_badge      = self._mkfmt("#e0af68", bold=True)
 
-        # counters row
         self.fmt_counters_base    = self._mkfmt("#bfbfbf")
         self.fmt_kv_label         = self._mkfmt("#1c94d5", bold=True)
         self.fmt_kv_value         = self._mkfmt("#e0af68", bold=True)
@@ -673,7 +477,6 @@ class OutputHighlighter(QSyntaxHighlighter):
 
     def highlightBlock(self, text: str):
         import re
-
         t = text.strip()
 
         if "[Auto-Login]" in t:
@@ -686,7 +489,6 @@ class OutputHighlighter(QSyntaxHighlighter):
         if "[Bulk]" in t:
             self.setFormat(0, len(text), self.fmt_bulk)
 
-            # Highlight percentages (already there)
             pct_re = re.compile(r"(?P<num>\d+(?:\.\d+)?)%")
             for m in pct_re.finditer(t):
                 val_str = m.group("num")
@@ -706,7 +508,6 @@ class OutputHighlighter(QSyntaxHighlighter):
                 length = m.end() - m.start()
                 self.setFormat(start, length, fmt)
 
-            # --- NEW: Green "OK" and colored serial numbers ---
             ok_re = re.compile(r"\bOK\b", re.IGNORECASE)
             for m in ok_re.finditer(t):
                 self.setFormat(m.start(), m.end() - m.start(), self.fmt_bulk_ok)
@@ -715,36 +516,28 @@ class OutputHighlighter(QSyntaxHighlighter):
             for m in filtered_re.finditer(t):
                 self.setFormat(m.start(), m.end() - m.start(), self.fmt_bulk_filtered)
 
-            # Match Toshiba serials: e.g. CSJM49963, S8GN80153, etc.
             serial_re = re.compile(r"\b[A-Z0-9]{5,10}\b")
             for m in serial_re.finditer(t):
                 self.setFormat(m.start(), m.end() - m.start(), self.fmt_bulk_serial)
-
             return
-        # ─────────────────────────────────────────────────────────
-        # Section headers from format_report()
+
         if t in ("Final Parts", "Most-Due Items", "Counters", "End of Report"):
             self.setFormat(0, len(text), self.fmt_header)
             return
 
-        # ASCII rules like “────────────” lines
         if set(t) in ({"─"}, {"-"}, {"="}):
             self.setFormat(0, len(text), self.fmt_rule)
             return
 
-        # “ (Kit → Part Number × Qty)” explainer line under Final Parts
         if t.startswith("(") and any(tok in t.lower() for tok in ("qty", "catalog", "part number", "×", " x ")):
             self.setFormat(0, len(text), self.fmt_muted)
             return
 
-        # “KIT_CODE → PN ×QTY” rows
         if "→" in t and not t.startswith("Report Date"):
-            # New preferred: "<qty>x → <pn> → <kit>"
             kit_new_after = re.compile(
                 r"^\s*(?P<qty>\d+)\s*[x×]\s*→\s*(?P<pn>\S+)\s*→\s*(?P<kit>\S.*?)\s*$",
                 re.IGNORECASE
             )
-            # Back-compat (optional): "x<qty> → <pn> → <kit>" and "<kit> → <pn> ×<qty>"
             kit_new_before = re.compile(
                 r"^\s*x\s*(?P<qty>\d+)\s*→\s*(?P<pn>\S+)\s*→\s*(?P<kit>\S.*?)\s*$",
                 re.IGNORECASE
@@ -758,8 +551,6 @@ class OutputHighlighter(QSyntaxHighlighter):
                 self.setFormat(0, len(text), self.fmt_kit_row)
                 return
 
-        # ─────────────────────────────────────────────────────────
-        # Granular color for “Most-Due Items” bullets
         if t.startswith("• ") or "→ DUE" in t:
             m = re.match(
                 r"^\s*•\s+(?P<canon>.+?)\s+—\s+(?P<pct>\S+)(?:\s*→\s*(?P<due>DUE))?\s*$",
@@ -783,11 +574,8 @@ class OutputHighlighter(QSyntaxHighlighter):
                 self.setFormat(0, len(text), self.fmt_due_bullet)
                 return
 
-        # ─────────────────────────────────────────────────────────
-        # Header line:  Model: …  |  Serial: …  |  Date: …
         if t.startswith("Model:") and "Serial:" in t and "Date:" in t:
             self.setFormat(0, len(text), self.fmt_header_line_base)
-            # robust capture (model can have spaces, serial usually token-ish)
             m = re.search(
                 r"Model:\s*(?P<model>.+?)\s*\|\s*Serial:\s*(?P<serial>\S+)\s*\|\s*Date:\s*(?P<date>.+)$",
                 text
@@ -796,19 +584,16 @@ class OutputHighlighter(QSyntaxHighlighter):
                 def _apply_span(name, fmt):
                     s, e = m.span(name)
                     self.setFormat(s, e - s, fmt)
-
                 _apply_span("model",  self.fmt_model_value)
                 _apply_span("serial", self.fmt_serial_value)
                 _apply_span("date",   self.fmt_date_value)
             return
 
-        # Center badges mirror, plus:  Due threshold: …  •  Basis: …
         if t.startswith("Basis:") or t.startswith("Report Date:"):
             self.setFormat(0, len(text), self.fmt_label)
             return
 
         if t.lower().startswith("due threshold:") and "basis:" in t.lower():
-            # works with either "0.53" or "53%" (we just color whatever value token is)
             self.setFormat(0, len(text), self.fmt_badge_line_base)
             m = re.search(
                 r"(?i)due\s*threshold:\s*(?P<thresh>[0-9.]+%?)\s*•\s*basis:\s*(?P<basis>\S+)",
@@ -818,16 +603,12 @@ class OutputHighlighter(QSyntaxHighlighter):
                 def _apply_span(s_e, fmt):
                     s, e = s_e
                     self.setFormat(s, e - s, fmt)
-
                 _apply_span(m.span("thresh"), self.fmt_thresh_value)
                 _apply_span(m.span("basis"),  self.fmt_basis_badge)
             return
 
-        # Counters compact line: "  Color: 57191  Black: 56325  DF: 41986  Total: 113516"
-        # Keep labels one color and numbers another for quick scanning.
         if t.lower().startswith("color:") or (" black:" in t.lower() and " total:" in t.lower()):
             self.setFormat(0, len(text), self.fmt_counters_base)
-            # colorize each "Label: value"
             for m in re.finditer(r"([A-Za-z]+):\s*([0-9,]+)", text):
                 label_span = m.span(1)
                 val_span   = m.span(2)
@@ -840,7 +621,7 @@ class BulkConfig:
     top_n: int = 25
     out_dir: str = ""
     pool_size: int = 4
-    blacklist: list[str] = None  # ← NEW
+    blacklist: list[str] = None
     def __post_init__(self):
         if self.blacklist is None:
             self.blacklist = []
@@ -883,16 +664,10 @@ class BulkRunner(QObject):
         return False
 
     def _prefilter_by_unpack_date(self, serials: list[str], pool) -> list[str]:
-        """
-        Applies 'Today > Unpack + extra months' filter.
-        Emits '[Bulk] OK: ...' / '[Bulk] Filtered: ...' lines.
-        Returns kept serials.
-        """
         if not self._unpack_filter_enabled:
             self.progress.emit("[Info] Unpack filter disabled.")
             return list(serials)
 
-        # Try either get_unpacking_date(serial, sess=...) or get_unpack_date(serial, sess)
         try:
             from pmgen.io.http_client import get_unpacking_date as _get_unpack
             _sig_uses_kw = True
@@ -934,7 +709,6 @@ class BulkRunner(QObject):
                 cutoff = _add_months(d, base_months)
                 today = date.today()
                 if today > cutoff:
-                    # months over cutoff (for your colored % logic, this is just text)
                     over = (today.year - cutoff.year) * 12 + (today.month - cutoff.month)
                     if today.day < cutoff.day:
                         over -= 1
@@ -969,13 +743,10 @@ class BulkRunner(QObject):
             self.progress.emit("[Info] Creating session pool...")
             pool = SessionPool(self.cfg.pool_size)
 
-            # 1) Get serials
             with pool.acquire() as sess:
                 serials = get_serials_after_login(sess)
-            
             self.progress.emit(f"[Info] Found {len(serials)} Active Serials.")
 
-            # 2) Apply blacklist
             serials0 = list(serials or [])
             serials1 = [s for s in serials0 if not self._is_blacklisted(s)]
             skipped = len(serials0) - len(serials1)
@@ -984,7 +755,6 @@ class BulkRunner(QObject):
             if not serials1:
                 raise RuntimeError("No serials to process after applying blacklist.")
 
-            # 3) Apply unpacking filter (this is what you “lost”)
             kept_serials = self._prefilter_by_unpack_date(serials1, pool)
             if not kept_serials:
                 raise RuntimeError("All serials were filtered out by unpack-date/cutoff logic.")
@@ -1118,6 +888,10 @@ class MainWindow(QMainWindow):
     BULK_UNPACK_KEY_ENABLE = "bulk/unpack_filter_enabled"
     BULK_UNPACK_KEY_EXTRA  = "bulk/unpack_extra_months"
 
+    # ---- Auth prefs (QSettings only; credentials live in http_client)
+    AUTH_REMEMBER_KEY = "auth/remember"
+    AUTH_USERNAME_KEY = "auth/username"
+
     def _get_unpack_filter_enabled(self) -> bool:
         s = QSettings()
         return bool(s.value(self.BULK_UNPACK_KEY_ENABLE, False, bool))
@@ -1132,7 +906,7 @@ class MainWindow(QMainWindow):
             v = int(s.value(self.BULK_UNPACK_KEY_EXTRA, 0, int))
         except Exception:
             v = 0
-        return max(0, min(120, v))  # clamp [0..120]
+        return max(0, min(120, v))
 
     def _set_unpack_extra_months(self, months: int):
         s = QSettings()
@@ -1144,7 +918,6 @@ class MainWindow(QMainWindow):
         out   = s.value(BULK_DIR_KEY, "", str)
         pool  = int(s.value(BULK_POOL_KEY, 4, int))
         bl_raw = s.value(BULK_BLACKLIST_KEY, "", str) or ""
-        # split by newlines or commas, trim, drop empties, upper for case-insensitive compare
         bl = []
         for line in re.split(r"[,\n]+", bl_raw):
             pat = line.strip()
@@ -1178,7 +951,6 @@ class MainWindow(QMainWindow):
         s.setValue(self.COLORIZED_KEY, bool(on))
 
     def _apply_colorized_highlighter(self):
-        # attach/detach the QSyntaxHighlighter based on setting
         if not hasattr(self, "_out_highlighter"):
             self._out_highlighter = None
 
@@ -1189,11 +961,9 @@ class MainWindow(QMainWindow):
             self._out_highlighter = OutputHighlighter(self.editor.document())
             self._out_highlighter.rehighlight()
         elif not want and have:
-            # QSyntaxHighlighter has no disable; delete to detach
             self._out_highlighter.setDocument(None)
             self._out_highlighter.deleteLater()
             self._out_highlighter = None
-            # force full repaint (plain text)
             self.editor.setPlainText(self.editor.toPlainText())
 
     def _thr_to_slider(self, thr: float) -> int:
@@ -1241,22 +1011,18 @@ class MainWindow(QMainWindow):
         top = QLabel("Drag to set the fraction of life used that counts as DUE (0.01–2.00).", dlg)
         top.setObjectName("DialogLabel")
 
-        # current values
         cur_thr = self._get_threshold()
-
-        # slider: 1..200 → 0.01..2.00
         slider = QSlider(Qt.Orientation.Horizontal, dlg)
         slider.setRange(1, 200)
-        slider.setSingleStep(1)         # 0.01
-        slider.setPageStep(5)           # 0.05
+        slider.setSingleStep(1)
+        slider.setPageStep(5)
         slider.setTickPosition(QSlider.TickPosition.TicksBelow)
-        slider.setTickInterval(10)      # ticks every 0.10
+        slider.setTickInterval(10)
         slider.setValue(self._thr_to_slider(cur_thr))
 
-        # NEW: editable numeric box with % suffix (right side)
         pct_box = QDoubleSpinBox(dlg)
         pct_box.setObjectName("DialogInput")
-        pct_box.setRange(1.0, 200.0)    # percent
+        pct_box.setRange(1.0, 200.0)
         pct_box.setDecimals(1)
         pct_box.setSingleStep(0.1)
         pct_box.setSuffix("%")
@@ -1264,7 +1030,6 @@ class MainWindow(QMainWindow):
         pct_box.setFixedWidth(80)
         pct_box.setValue(cur_thr * 100.0)
 
-        # buttons
         btn_row = QHBoxLayout()
         reset_btn = QPushButton("Default", dlg)
         save_btn = QPushButton("Save", dlg)
@@ -1272,7 +1037,6 @@ class MainWindow(QMainWindow):
         btn_row.addWidget(reset_btn)
         btn_row.addWidget(save_btn)
 
-        # layout
         dlg._content_layout.addWidget(top)
         r1 = QHBoxLayout()
         r1.setContentsMargins(0, -2, 0, 0) 
@@ -1281,9 +1045,7 @@ class MainWindow(QMainWindow):
         dlg._content_layout.addLayout(r1)
         dlg._content_layout.addLayout(btn_row)
 
-        # ── sync logic ──────────────────────────────────────────────
         def _apply(thr: float):
-            # clamp + persist + update center badge live
             thr = max(0.01, min(2.00, float(thr)))
             self._set_threshold(thr)
             self._update_threshold_label()
@@ -1293,7 +1055,6 @@ class MainWindow(QMainWindow):
 
         def on_slider_changed(_val: int):
             thr = self._slider_to_thr(slider.value())
-            # update spinbox without loop
             pct_box.blockSignals(True)
             pct_box.setValue(thr * 100.0)
             pct_box.blockSignals(False)
@@ -1302,7 +1063,6 @@ class MainWindow(QMainWindow):
         def on_pct_changed(pct_val: float):
             thr = float(pct_val) / 100.0
             thr = _apply(thr)
-            # update slider without loop
             slider.blockSignals(True)
             slider.setValue(self._thr_to_slider(thr))
             slider.blockSignals(False)
@@ -1310,7 +1070,6 @@ class MainWindow(QMainWindow):
         slider.valueChanged.connect(on_slider_changed)
         pct_box.valueChanged.connect(on_pct_changed)
 
-        # reset to default (0.90 → 90.0%)
         def on_reset():
             def_thr = 0.90
             slider.blockSignals(True)
@@ -1322,8 +1081,6 @@ class MainWindow(QMainWindow):
             _apply(def_thr)
 
         reset_btn.clicked.connect(on_reset)
-
-        # save & close (values already persisted on change)
         save_btn.clicked.connect(dlg.accept)
         dlg.exec()
 
@@ -1336,32 +1093,24 @@ class MainWindow(QMainWindow):
         self.resize(1100, 720)
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
 
-        # Auth UI state (in-memory)
+        # Auth UI state
         self._signed_in: bool = False
-        self.auth = AuthManager()
-        self._current_user: str = self.auth.get_username() or ""
-        self._auto_login_attempted: bool = False  # ← guard to avoid loops
-
-        # thread worker handles
-        self._login_thread: Optional[QThread] = None
-        self._login_worker: Optional[LoginWorker] = None
+        self._current_user: str = ""
+        self._auto_login_attempted: bool = False
 
         # Global tracking + event filter
         app = QApplication.instance()
         app.installEventFilter(self)
         self.setMouseTracking(True)
 
-        # Central
         central = QWidget()
         self._vbox = QVBoxLayout(central)
         self._vbox.setContentsMargins(6, 6, 6, 6)
         self._vbox.setSpacing(6)
 
-        # Secondary bar
         self._secondary_bar = self._build_secondary_bar()
         self._vbox.addWidget(self._secondary_bar, 0)
 
-        # Editor
         self.editor = QPlainTextEdit()
         self.editor.setReadOnly(True)
         self.editor.setMaximumBlockCount(2000)
@@ -1373,12 +1122,11 @@ class MainWindow(QMainWindow):
 
         self._log_queue = deque()
         self._log_timer = QTimer(self)
-        self._log_timer.setInterval(40)              # ~25fps flush
+        self._log_timer.setInterval(40)
         self._log_timer.timeout.connect(self._flush_log_queue)
         self._log_timer.start()
 
-        # (optional) cheap reflow avoidance
-        self._log_batch_limit = 200                  # lines per flush burst
+        self._log_batch_limit = 200
         self._bulk_thread: QThread | None = None
         self._bulk_runner = None
 
@@ -1388,20 +1136,15 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
         self.centralWidget().setMouseTracking(True)
 
-        # Toolbar
         self.toolbar = self._build_toolbar()
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self.toolbar)
 
-        # Initialize auth UI
         self._update_auth_ui()
-
-        # Try auto-login after the event loop settles and toolbar/icons exist
         QTimer.singleShot(0, self._attempt_auto_login)
 
-        # Resize state
         self._rs = ResizeState()
 
-    # Never react to OS palette/theme changes — keep static theme
+    # Never react to OS palette/theme changes
     def event(self, ev):
         if ev.type() in (
             QEvent.Type.ApplicationPaletteChange,
@@ -1429,12 +1172,9 @@ class MainWindow(QMainWindow):
 
         self.user_label = QLabel("Not signed in", bar)
         self.user_label.setObjectName("UserLabel")
-
         h.addWidget(self.user_label, 0, Qt.AlignmentFlag.AlignVCenter)
-
         h.addStretch(1)
 
-        # PM center indicators
         self._thr_label = QLabel("", bar)
         self._thr_label.setObjectName("DialogLabel")
         self._update_threshold_label()
@@ -1444,7 +1184,6 @@ class MainWindow(QMainWindow):
         h.addWidget(self._thr_label, 0, Qt.AlignmentFlag.AlignVCenter)
         h.addWidget(self._basis_label, 0, Qt.AlignmentFlag.AlignVCenter)
 
-        # Recent Serials combo (editable)
         self._id_combo = QComboBox(bar)
         self._id_combo.setObjectName("IdInput")
         self._id_combo.setEditable(True)
@@ -1471,14 +1210,12 @@ class MainWindow(QMainWindow):
         return bar
 
     def _on_generate_clicked(self):
-        # Read the ID/serial from the combo box
         le = self._id_combo.lineEdit()
         text = le.text().strip().upper()
         if not text:
             CustomMessageBox.warn(self, "Missing Serial", "Please Enter A Serial Number", self._icon_dir)
             return
 
-        # Maintain recent history
         items = [text] + [
             self._id_combo.itemText(i)
             for i in range(self._id_combo.count())
@@ -1488,16 +1225,11 @@ class MainWindow(QMainWindow):
         self._set_history(items)
         self._save_id_history()
 
-        # Lazy imports to keep UI load fast
-        from PyQt6.QtWidgets import QFileDialog
         try:
-            # You already expose this at pmgen.engine.__init__ (keep as-is)
             from pmgen.engine import generate_from_bytes
         except Exception:
-            # Fallback if you only exported from single_report
             from pmgen.engine.single_report import generate_from_bytes
 
-        # Try online fetch first, then fall back to a local file picker
         data = None
         try:
             from pmgen.io.http_client import get_service_file_bytes
@@ -1505,7 +1237,6 @@ class MainWindow(QMainWindow):
         except Exception:
             try:
                 if hasattr(self, "act_login"):
-                    # open login and retry once
                     self.act_login.trigger()
                 from pmgen.io.http_client import get_service_file_bytes as _refetch
                 data = _refetch(text, "PMSupport")
@@ -1524,21 +1255,15 @@ class MainWindow(QMainWindow):
             with open(path, "rb") as f:
                 data = f.read()
 
-        # Generate and render
         try:
             out = generate_from_bytes(
                 pm_pdf_bytes=data,
                 threshold=self._get_threshold(),
                 life_basis=self._get_life_basis(),
-                show_all=self._get_show_all(),   # ← NEW: Show All toggle
+                show_all=self._get_show_all(),
             )
-
-            # Replace existing output (append would keep stacking runs)
             self.editor.setPlainText(out)
-
-            # Apply / detach highlighter based on user's Colorized setting
             self._apply_colorized_highlighter()
-
         except Exception as e:
             CustomMessageBox.warn(self, "Generate failed", str(e), self._icon_dir)
             
@@ -1579,7 +1304,6 @@ class MainWindow(QMainWindow):
         h.setContentsMargins(0, 0, 0, 0)
         h.setSpacing(0)
 
-        # Settings drop-down
         settings_btn = QToolButton()
         settings_btn.setObjectName("SettingsBtn")
         settings_btn.setText("Settings ▾")
@@ -1601,28 +1325,22 @@ class MainWindow(QMainWindow):
         settings_menu.addAction(self.act_login)
         settings_menu.addAction(self.act_logout)
 
-        # Threshold + Basis
         act_due = QAction("Due Threshold…", self)
         act_due.triggered.connect(self._open_due_threshold_dialog)
         settings_menu.addAction(act_due)
-
 
         act_basis = QAction("Life Basis…", self)
         act_basis.triggered.connect(self._open_life_basis_dialog)
         settings_menu.addAction(act_basis)
 
-        # NEW: Show All Items
         act_show_all = QAction("Show All Items", self)
         act_show_all.setToolTip("Show all PL items in the Most-Due section, even if under the due threshold.")
         act_show_all.setCheckable(True)
         act_show_all.setChecked(self._get_show_all())
         def _toggle_show_all(checked: bool):
             self._set_show_all(checked)
-            # optionally auto-regenerate if you keep last pdf bytes cached
-            # self._regenerate_last_input()
         act_show_all.toggled.connect(_toggle_show_all)
         settings_menu.addAction(act_show_all)
-
 
         act_color = QAction("Colorized Output", self)
         act_color.setCheckable(True)
@@ -1637,7 +1355,6 @@ class MainWindow(QMainWindow):
         settings_menu.addAction(act_about)
         settings_btn.setMenu(settings_menu)
 
-        # Bulk drop-down (unchanged)
         bulk_btn = QToolButton()
         bulk_btn.setObjectName("BulkBtn")
         bulk_btn.setText("Bulk ▾")
@@ -1663,7 +1380,6 @@ class MainWindow(QMainWindow):
         title = TitleDragLabel("PmGen", self)
         drag_right = DragRegion(self)
 
-        # Right-side window controls
         icon_dir = os.path.join(os.path.dirname(__file__), "icons")
         minimize_icon = os.path.join(icon_dir, "minimize.svg")
         fullscreen_icon = os.path.join(icon_dir, "fullscreen.svg")
@@ -1690,7 +1406,6 @@ class MainWindow(QMainWindow):
         right_box_l.addWidget(btn_full)
         right_box_l.addWidget(btn_exit)
 
-        # Assemble
         h.addWidget(settings_btn, 0)
         h.addWidget(bulk_btn, 0)
         h.addWidget(spacer_l_fixed, 0)
@@ -1735,22 +1450,22 @@ class MainWindow(QMainWindow):
     def _clear_output_window(self):
         self.editor.clear()
 
+    # ---------------- Unified Login (via http_client) ----------------
     def _open_login_dialog(self):
         dlg = FramelessDialog(self, "Login", self._icon_dir)
 
-        username_label = QLabel("Enter Username:", dlg);
+        username_label = QLabel("Enter Username:", dlg)
         username_label.setObjectName("DialogLabel")
         username = QLineEdit(dlg); username.setObjectName("DialogInput")
-        if self._current_user:
-            username.setText(self._current_user)
+
+        # seed with last remembered username if any
+        s = QSettings()
+        last_user = s.value(self.AUTH_USERNAME_KEY, "", str)
+        if last_user:
+            username.setText(last_user)
 
         password_label = QLabel("Enter Password:", dlg); password_label.setObjectName("DialogLabel")
         password = QLineEdit(dlg); password.setEchoMode(QLineEdit.EchoMode.Password); password.setObjectName("DialogInput")
-
-        if self._current_user and self.auth.get_remember():
-            saved_pw = self.auth.get_password(self._current_user)
-            if saved_pw:
-                password.setText(saved_pw)
 
         dlg._content_layout.addWidget(username_label)
         dlg._content_layout.addWidget(username)
@@ -1760,11 +1475,57 @@ class MainWindow(QMainWindow):
         row = QHBoxLayout()
         stay_logged_in_checkbox = QCheckBox("Stay Logged In", dlg)
         stay_logged_in_checkbox.setObjectName("DialogCheckbox")
-        stay_logged_in_checkbox.setChecked(self.auth.get_remember())
+        stay_logged_in_checkbox.setChecked(bool(s.value(self.AUTH_REMEMBER_KEY, False, bool)))
 
         btn_login = QPushButton("Login", dlg)
         btn_login.setDefault(True)
-        btn_login.clicked.connect(lambda: self._start_login_from_dialog(username.text(), password.text(), stay_logged_in_checkbox.isChecked(), dlg, btn_login))
+
+        def _do_login():
+            u = (username.text() or "").strip()
+            p = password.text() or ""
+            if not u or not p:
+                CustomMessageBox.warn(self, "Login", "Please enter username and password.", self._icon_dir)
+                return
+
+            btn_login.setEnabled(False)
+            self.user_label.setText("Signing in…")
+            self.editor.appendPlainText(f"[Auto-Login] Attempting as {u}…")
+
+            # Save creds to http_client; then verify by calling http_client.login(sess)
+            try:
+                from pmgen.io import http_client as hc
+                hc.save_credentials(u, p)
+
+                sess = requests.Session()
+                hc.login(sess)  # raises on failure
+
+                # persist UI prefs
+                s.setValue(self.AUTH_REMEMBER_KEY, bool(stay_logged_in_checkbox.isChecked()))
+                s.setValue(self.AUTH_USERNAME_KEY, u)
+
+                # UI state
+                self._signed_in = True
+                self._current_user = u
+                self._update_auth_ui()
+
+                self.editor.appendPlainText(f"[Auto-Login] {u} — success")
+                CustomMessageBox.info(self, "Login", "Login successful.", self._icon_dir)
+                dlg.accept()
+            except Exception as e:
+                # clear possibly bad creds
+                try:
+                    hc.clear_credentials()
+                except Exception:
+                    pass
+                self._signed_in = False
+                self._current_user = ""
+                self._update_auth_ui()
+                self.editor.appendPlainText(f"[Auto-Login] {u} — failed: {e}")
+                CustomMessageBox.warn(self, "Login failed", str(e), self._icon_dir)
+            finally:
+                btn_login.setEnabled(True)
+
+        btn_login.clicked.connect(_do_login)
 
         row.addWidget(stay_logged_in_checkbox, alignment=Qt.AlignmentFlag.AlignLeft)
         row.addStretch(1)
@@ -1773,147 +1534,59 @@ class MainWindow(QMainWindow):
         dlg._content_layout.addLayout(row)
         dlg.exec()
 
-    def _should_skip_by_unpack_filter(self, serial: str, sess) -> tuple[bool, str]:
-        """
-        Returns (skip, note). If skip=True, bulk should exclude this serial.
-        """
-        if not self._get_unpack_filter_enabled():
-            return (False, "Unpack filter disabled")
-
-        try:
-            from pmgen.io.http_client import get_unpacking_date
-        except Exception as e:
-            return (False, f"Unpack filter unavailable ({e})")
-
-        unpack_dt = get_unpacking_date(serial, sess=sess)
-        if not unpack_dt:
-            # No data -> do NOT filter (safe default)
-            return (False, "No unpacking date present")
-
-        extra = self._get_unpack_extra_months()
-        base_months = 36 + int(extra)
-        from datetime import date
-        # local helper mirrors http_client._add_months logic
-        def _add_months_local(d, months):
-            y = d.year + (d.month - 1 + months) // 12
-            m = (d.month - 1 + months) % 12 + 1
-            import calendar
-            last = calendar.monthrange(y, m)[1]
-            return date(y, m, min(d.day, last))
-        cutoff = _add_months_local(unpack_dt, base_months)
-        today  = date.today()
-
-        if today > cutoff:
-            return (True, f"Filtered: {serial} unpacked {unpack_dt.isoformat()} → cutoff {cutoff.isoformat()} (>{base_months} mo)")
-        else:
-            return (False, f"OK: {serial} unpacked {unpack_dt.isoformat()} (cutoff {cutoff.isoformat()})")
-
-    # ---- Centralized login thread setup ----
-    def _start_login_thread(self, username: str, password: str, remember: bool, on_finished):
-        # Spin up worker thread for network call
-        self._login_thread = QThread(self)
-        self._login_worker = LoginWorker(username, password)
-        self._login_worker.moveToThread(self._login_thread)
-        self._login_thread.started.connect(self._login_worker.run)
-
-        # ensure cleanup + callback
-        def _finish(ok: bool, msg: str):
-            try:
-                on_finished(ok, msg, username, password, remember)
-            finally:
-                # cleanup signals/objects
-                self._login_thread.quit()
-                self._login_worker.deleteLater()
-
-        self._login_worker.finished.connect(_finish)
-        self._login_thread.finished.connect(self._login_thread.deleteLater)
-        self._login_thread.start()
-
-    # ---- Dialog-bound login flow (UI disables button, shows messages) ----
-    def _start_login_from_dialog(self, username: str, password: str, remember: bool, dlg: QDialog, btn: QPushButton):
-        username = (username or "").strip()
-        password = (password or "")
-        if not username or not password:
-            CustomMessageBox.warn(self, "Login", "Please enter username and password.", self._icon_dir)
-            return
-
-        btn.setEnabled(False)
-
-        def _on_finish(ok: bool, msg: str, u: str, p: str, r: bool):
-            btn.setEnabled(True)
-            if ok:
-                self._apply_login_success(u, p, r, show_toast=True)
-                dlg.accept()
-            else:
-                self.editor.appendPlainText(f"[Login] {u} — failed: {msg}")
-                CustomMessageBox.warn(self, "Login failed", msg or "Invalid credentials.", self._icon_dir)
-
-        self._start_login_thread(username, password, remember, _on_finish)
-
-    # ---- Auto-login attempt on startup (no dialog) ----
     def _attempt_auto_login(self):
         if self._auto_login_attempted or self._signed_in:
             return
         self._auto_login_attempted = True
 
-        if not self.auth.get_remember():
-            return
-        username = (self.auth.get_username() or "").strip()
-        if not username:
-            return
-        password = self.auth.get_password(username)
-        if not password:
+        s = QSettings()
+        if not bool(s.value(self.AUTH_REMEMBER_KEY, False, bool)):
             return
 
-        # Give the user a hint in the UI
+        try:
+            from pmgen.io import http_client as hc
+        except Exception:
+            return
+
+        u = None
+        p = None
+        try:
+            u = hc.get_saved_username()
+            p = hc.get_saved_password()
+        except Exception:
+            pass
+        if not (u and p):
+            # fall back to last username setting; still need password in keyring
+            u = s.value(self.AUTH_USERNAME_KEY, "", str) or ""
+            if not u:
+                return
+            try:
+                p = hc.get_saved_password()
+            except Exception:
+                p = None
+            if not p:
+                return
+
         self.user_label.setText("Signing in…")
-        self.editor.appendPlainText(f"[Auto-Login] Attempting as {username}…")
+        self.editor.appendPlainText(f"[Auto-Login] Attempting as {u}…")
 
-        def _on_finish(ok: bool, msg: str, u: str, p: str, r: bool):
-            if ok:
-                self._apply_login_success(u, p, r, show_toast=False)
-                self.editor.appendPlainText(f"[Auto-Login] {u} — success")
-            else:
-                self._signed_in = False
-                self._current_user = ""
-                self._update_auth_ui()
-                self.editor.appendPlainText(f"[Auto-Login] {u} — failed: {msg}")
-
-        self._start_login_thread(username, password, True, _on_finish)
-
-    # ---- Common success path (persist + update UI) ----
-    def _apply_login_success(self, username: str, password: str, remember: bool, show_toast: bool):
-        # Persist prefs
-        self.auth.set_username(username)
-        self.auth.set_remember(remember)
-        if remember:
-            self.auth.save_password(username, password)
-        else:
-            self.auth.delete_password(username)
-
-        # In-memory UI state
-        self._signed_in = True
-        self._current_user = username
-
-        self._update_auth_ui()
-        if show_toast:
-            CustomMessageBox.info(self, "Login", "Login successful.", self._icon_dir)
-
-    def _open_prefs_dialog(self):
-        dlg = FramelessDialog(self, "Preferences", self._icon_dir)
-        dlg._content_layout.addWidget(QLabel("Preferences go here.", dlg))
-        row = QHBoxLayout()
-        row.addStretch(1)
-        ok_btn = QPushButton("OK", dlg); ok_btn.clicked.connect(dlg.accept)
-        row.addWidget(ok_btn)
-        dlg._content_layout.addLayout(row)
-        dlg.exec()
+        try:
+            sess = requests.Session()
+            hc.login(sess)  # uses saved creds
+            self._signed_in = True
+            self._current_user = u
+            self._update_auth_ui()
+            self.editor.appendPlainText(f"[Auto-Login] {u} — success")
+        except Exception as e:
+            self._signed_in = False
+            self._current_user = ""
+            self._update_auth_ui()
+            self.editor.appendPlainText(f"[Auto-Login] {u} — failed: {e}")
 
     def _open_bulk_settings(self):
         cfg = self._get_bulk_config()
-        s = QSettings()  # used for the new unpacking filter fields
+        s = QSettings()
 
-        # read current unpacking filter prefs (default: disabled, 0 extra months)
         unpack_enabled = bool(s.value("bulk/unpack_filter_enabled", False, bool))
         try:
             unpack_extra = int(s.value("bulk/unpack_extra_months", 0, int))
@@ -1922,7 +1595,6 @@ class MainWindow(QMainWindow):
 
         dlg = FramelessDialog(self, "Bulk Settings", self._icon_dir)
 
-        # Top N
         row1 = QHBoxLayout()
         row1.addWidget(QLabel("Top N serials to export:", dlg))
         sp_top = QSpinBox(dlg)
@@ -1932,7 +1604,6 @@ class MainWindow(QMainWindow):
         row1.addStretch(1)
         row1.addWidget(sp_top)
 
-        # Pool size
         row2 = QHBoxLayout()
         row2.addWidget(QLabel("Parallel workers:", dlg))
         sp_pool = QSpinBox(dlg)
@@ -1942,7 +1613,6 @@ class MainWindow(QMainWindow):
         row2.addStretch(1)
         row2.addWidget(sp_pool)
 
-        # Output folder
         row3 = QHBoxLayout()
         row3.addWidget(QLabel("Output folder:", dlg))
         ed_dir = QLineEdit(cfg.out_dir, dlg)
@@ -1956,19 +1626,16 @@ class MainWindow(QMainWindow):
         row3.addWidget(ed_dir, 1)
         row3.addWidget(btn_browse)
 
-        # Blacklist (existing)
         row4 = QVBoxLayout()
         lbl_bl = QLabel("Blacklist (one pattern per line — supports * and ?):", dlg)
         lbl_bl.setObjectName("DialogLabel")
         bl_edit = QPlainTextEdit(dlg)
-        bl_edit.setObjectName("MainEditor")  # reuse monospace styling
+        bl_edit.setObjectName("MainEditor")
         bl_edit.setFixedHeight(100)
         bl_edit.setPlainText("\n".join(cfg.blacklist or []))
         row4.addWidget(lbl_bl)
         row4.addWidget(bl_edit)
 
-        # ─────────────────────────────────────────────────────────
-        # NEW: Unpacking Date Filter controls (saved in QSettings)
         row5 = QHBoxLayout()
         cb_unpack = QCheckBox("Enable unpacking date filter", dlg)
         cb_unpack.setObjectName("DialogCheckbox")
@@ -1993,14 +1660,11 @@ class MainWindow(QMainWindow):
             dlg
         )
         lbl_rule.setObjectName("DialogLabel")
-        # ─────────────────────────────────────────────────────────
 
-        # Buttons
         btns = QHBoxLayout()
         btns.addStretch(1)
         btn_save = QPushButton("Save", dlg)
         def _save_and_close():
-            # save blacklist through your normal BulkConfig path
             raw = bl_edit.toPlainText()
             patterns = []
             for line in re.split(r"[\n,]+", raw):
@@ -2014,37 +1678,50 @@ class MainWindow(QMainWindow):
                 pool_size=sp_pool.value(),
                 blacklist=patterns
             ))
-
-            # save the NEW unpacking filter fields directly in QSettings
             s.setValue("bulk/unpack_filter_enabled", bool(cb_unpack.isChecked()))
             s.setValue("bulk/unpack_extra_months", int(sp_extra.value()))
-
             dlg.accept()
         btn_save.clicked.connect(_save_and_close)
         btns.addWidget(btn_save)
 
-        # Assemble
         dlg._content_layout.addLayout(row1)
         dlg._content_layout.addLayout(row2)
         dlg._content_layout.addLayout(row3)
         dlg._content_layout.addLayout(row4)
         dlg._content_layout.addSpacing(8)
-        dlg._content_layout.addLayout(row5)      # NEW
-        dlg._content_layout.addLayout(row6)      # NEW
-        dlg._content_layout.addWidget(lbl_rule)  # NEW
+        dlg._content_layout.addLayout(row5)
+        dlg._content_layout.addLayout(row6)
+        dlg._content_layout.addWidget(lbl_rule)
         dlg._content_layout.addLayout(btns)
         dlg.exec()
 
     def _logout(self):
-        user = self._current_user
-        if user:
-            self.auth.delete_password(user)
-        self.auth.set_remember(False)
+        # turn off remember-me and forget last username
+        s = QSettings()
+        s.setValue(self.AUTH_REMEMBER_KEY, False)
+        s.setValue(self.AUTH_USERNAME_KEY, "")
+
+        # clear saved creds + close pools + server-side logout (best-effort)
+        try:
+            from pmgen.io import http_client as hc
+            if hasattr(hc, "server_side_logout"):
+                try:
+                    hc.server_side_logout()
+                except Exception:
+                    pass
+            if hasattr(hc, "SessionPool"):
+                try:
+                    hc.SessionPool.close_all_pools()
+                except Exception:
+                    pass
+            if hasattr(hc, "clear_credentials"):
+                hc.clear_credentials()
+        except Exception:
+            pass
 
         self._signed_in = False
         self._current_user = ""
         self._update_auth_ui()
-        CustomMessageBox.info(self, "Logout", "You are now logged out.", self._icon_dir)
 
     def _update_auth_ui(self):
         if self._signed_in:
@@ -2053,16 +1730,10 @@ class MainWindow(QMainWindow):
             self.user_label.setText("Not signed in")
 
     def _show_about(self):
-        # VERSION may not exist yet; keep it safe
         ver = globals().get("VERSION", "dev")
-
-        # Try to import the registry (support both package + local layouts)
         from pmgen.catalog.part_kit_catalog import REGISTRY
-
-        # Collect model keys that are actually mapped
         models = sorted([k for k, v in REGISTRY.items() if v is not None])
 
-        # Pretty column formatting (monospace)
         def _columns(items, cols=4, pad=12):
             out = []
             for i in range(0, len(items), cols):
@@ -2072,17 +1743,16 @@ class MainWindow(QMainWindow):
 
         about_top = (
             "PmGen\n"
-            f"Version: {VERSION}\n"
+            f"Version: {ver}\n"
             f"Supported models in registry: {len(models)}\n"
             "—\n"
         )
         about_body = _columns(models, cols=4, pad=12) if models else "(No models found in registry)"
 
-        # Show in our frameless dialog with copyable text
         dlg = FramelessDialog(self, "About", self._icon_dir)
         txt = QPlainTextEdit(dlg)
         txt.setReadOnly(True)
-        txt.setObjectName("MainEditor")  # reuse styling
+        txt.setObjectName("MainEditor")
         txt.setPlainText(about_top + about_body)
 
         btn_row = QHBoxLayout()
@@ -2097,25 +1767,18 @@ class MainWindow(QMainWindow):
 
     @pyqtSlot(str)
     def on_bulk_progress(self, line: str):
-        # just enqueue; QTimer will flush
         self._log_queue.append(line)
 
     @pyqtSlot(str)
     def on_bulk_finished(self, msg: str):
         self._log_queue.append(msg)
         self._log_queue.append("[Info] (done)")
-        # allow objects to be GC’d
         self._bulk_runner = None
         self._bulk_thread = None
 
     def _flush_log_queue(self):
-        """
-        Runs on the GUI thread (QTimer in __init__); batch-appends log lines
-        so we don’t freeze on thousands of .appendPlainText() calls.
-        """
         if not self._log_queue:
             return
-        # take up to N lines per tick to keep UI snappy
         chunk = []
         for _ in range(min(self._log_batch_limit, len(self._log_queue))):
             chunk.append(self._log_queue.popleft())
@@ -2123,7 +1786,6 @@ class MainWindow(QMainWindow):
         self.editor.moveCursor(QTextCursor.MoveOperation.End)
 
     def _start_bulk(self):
-        # Build config
         cfg = self._get_bulk_config()
         self._log_queue.append(f"[Info] Bulk Starting… (Top N={cfg.top_n}, Pool={cfg.pool_size})")
 
@@ -2219,20 +1881,18 @@ class MainWindow(QMainWindow):
         if self._rs.resizing and not self.isFullScreen():
             delta = e.globalPosition().toPoint() - self._rs.press_pos
             geom = QRect(self._rs.press_geom)
-            # Horizontal
             if self._rs.edge_left:
                 new_left = geom.left() + delta.x()
-                max_left = geom.right() - 200  # min width
+                max_left = geom.right() - 200
                 new_left = min(new_left, max_left)
                 geom.setLeft(new_left)
             elif self._rs.edge_right:
                 geom.setRight(self._rs.press_geom.right() + delta.x())
                 if geom.width() < 200:
                     geom.setRight(geom.left() + 200)
-            # Vertical
             if self._rs.edge_top:
                 new_top = geom.top() + delta.y()
-                max_top = geom.bottom() - 150  # min height
+                max_top = geom.bottom() - 150
                 new_top = min(new_top, max_top)
                 geom.setTop(new_top)
             elif self._rs.edge_bottom:
@@ -2250,7 +1910,7 @@ class MainWindow(QMainWindow):
 
     def mouseReleaseEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton and self._rs.resizing:
-            self._rs = ResizeState()  # reset
+            self._rs = ResizeState()
             self._update_cursor(QCursor.pos())
             e.accept()
             return
