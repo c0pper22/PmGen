@@ -13,6 +13,7 @@ import requests
 import weakref
 from weakref import WeakSet
 from pmgen.ui.main_window import SERVICE_NAME
+from pmgen.io.fetch_serials import parse_serial_numbers
 
 # Logging (safe; excludes credentials)
 LOG_DIR = os.path.join(os.path.expanduser("~"), ".indybiz_pm")
@@ -252,28 +253,39 @@ def get_serials_after_login(sess: requests.Session) -> List[str]:
     r = sess.get(DEVICE_INDEX, headers=HEADERS_COMMON, timeout=30, allow_redirects=True)
     r.raise_for_status()
     html = r.text
-    # ... existing parsing of serials (unchanged) ...
     serials: List[str] = []
-    # naive example pattern; your real code already has this:
-    for m in re.finditer(r'data-serial="([A-Z0-9]{6,})"', html, re.I):
-        serials.append(m.group(1))
-    serials = list(dict.fromkeys(serials))  # dedupe, keep order
+    serials = parse_serial_numbers(html)
     return serials
 
 
-# --- Unpacking date helpers (unchanged) ---
 def _parse_unpacking_date_from_08_bytes(blob: bytes) -> Optional[date]:
-    # ... your existing implementation ...
-    for line in blob.decode(errors="ignore").splitlines():
-        if "3612" in line:
-            m = re.search(r"(\d{4})/(\d{2})/(\d{2})", line)
-            if not m:
-                continue
-            try:
-                yy, mo, dy = map(int, m.groups())
-                return date(yy, mo, dy)
-            except Exception:
-                continue
+    """
+    Look for the 08 Setting Mode "Unpacking date" (code 3612).
+    Handles packed numeric format like:
+        3612, , 2507292085501,
+    where first 6 digits are YYMMDD.
+    """
+    for raw in blob.decode(errors="ignore").splitlines():
+        if "3612" not in raw:
+            continue
+        # find a long numeric token after 3612
+        parts = re.split(r"[,\s]+", raw.strip())
+        try:
+            idx = parts.index("3612")
+        except ValueError:
+            continue
+
+        # search forward for the first 6+ digit number
+        for token in parts[idx + 1:]:
+            if re.fullmatch(r"\d{6,}", token):
+                try:
+                    yy = int(token[0:2])
+                    mm = int(token[2:4])
+                    dd = int(token[4:6])
+                    year = 2000 + yy  # assume 20xx
+                    return date(year, mm, dd)
+                except Exception:
+                    break
     return None
 
 
