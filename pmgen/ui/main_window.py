@@ -104,6 +104,13 @@ QCheckBox#DialogCheckbox::indicator:unchecked { image: none; }
 #UserLabel { background: #1f2023; color: #e9e9e9; font-weight: 800 }
 #DialogInput { background: #2a2c2f; color: #e9e9e9; border: 1px solid #000000; font-weight: 800; }
 #DialogInput:focus { background: #2a2c2f; color: #e9e9e9; border-radius: 0; border: 1px solid #000000; font-weight: 800 }
+#DialogInput::up-arrow {
+    image: url(pmgen/ui/icons/up.svg);
+}
+#DialogInput::down-arrow {
+    image: url(pmgen/ui/icons/down.svg);
+}
+
 
 /* Secondary bar */
 #SecondaryBar { background: #202225; border: 1px solid #000000; border-radius: 0; padding: 6px; }
@@ -1919,6 +1926,7 @@ class MainWindow(QMainWindow):
         row1 = QHBoxLayout()
         row1.addWidget(QLabel("Top N serials to export:", dlg))
         sp_top = QSpinBox(dlg)
+        sp_top.setObjectName("DialogInput")
         sp_top.setRange(1, 9999)
         sp_top.setValue(cfg.top_n)
         row1.addStretch(1)
@@ -1928,6 +1936,7 @@ class MainWindow(QMainWindow):
         row2 = QHBoxLayout()
         row2.addWidget(QLabel("Parallel workers:", dlg))
         sp_pool = QSpinBox(dlg)
+        sp_pool.setObjectName("DialogInput")
         sp_pool.setRange(1, 16)
         sp_pool.setValue(cfg.pool_size)
         row2.addStretch(1)
