@@ -622,6 +622,7 @@ class BulkConfig:
     out_dir: str = ""
     pool_size: int = 4
     blacklist: list[str] = None
+    show_all: bool = False
     def __post_init__(self):
         if self.blacklist is None:
             self.blacklist = []
@@ -764,6 +765,7 @@ class BulkRunner(QObject):
 
             thr = self.threshold
             basis = self.life_basis
+            show_all = self.cfg.show_all
 
             def work(serial: str):
                 try:
@@ -780,7 +782,7 @@ class BulkRunner(QObject):
                         selection=selection,
                         threshold=thr,
                         life_basis=basis,
-                        show_all=False
+                        show_all=show_all
                     )
 
                     meta = getattr(selection, "meta", {}) or {}
@@ -1787,6 +1789,7 @@ class MainWindow(QMainWindow):
 
     def _start_bulk(self):
         cfg = self._get_bulk_config()
+        cfg.show_all = self._get_show_all()
         self._log_queue.append(f"[Info] Bulk Starting… (Top N={cfg.top_n}, Pool={cfg.pool_size})")
 
         threshold = self._get_threshold()
