@@ -1,0 +1,27 @@
+Model: TOSHIBA e-STUDIO6527AC  |  Serial: C6KN12664  |  Date: 11-05-2025 21:11
+Due threshold: 52.0%  •  Basis: PAGE
+
+Counters:
+  Color: 91038  Black: 158188  DF: 126929  Total: 249226
+
+───────────────────────────────────────────────────────────────
+Most-Due Items
+───────────────
+  • DF PICK UP ROLLER — 110.0% → DUE
+      ↳ Catalog: KIT-ROL-MR-4010
+
+  • DF FEED ROLLER — 110.0% → DUE
+      ↳ Catalog: KIT-ROL-MR-4010
+
+  • DF SEP ROLLER — 110.0% → DUE
+      ↳ Catalog: KIT-ROL-MR-4010
+
+
+Final Parts
+───────────────────────────────────────────────────────────────
+(Qty → Part Number → Unit )
+1x → 6LL48460000 → KIT-ROL-MR-4010
+
+───────────────────────────────────────────────────────────────
+End of Report
+───────────────────────────────────────────────────────────────

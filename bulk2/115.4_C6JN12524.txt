@@ -1,0 +1,64 @@
+Model: TOSHIBA e-STUDIO7527AC  |  Serial: C6JN12524  |  Date: 11-05-2025 04:27
+Due threshold: 52.0%  •  Basis: PAGE
+
+Counters:
+  Color: 188568  Black: 502703  DF: 64523  Total: 691271
+
+───────────────────────────────────────────────────────────────
+Most-Due Items
+───────────────
+  • OZONE FILTER 1 — 115.4% → DUE
+      ↳ Catalog: FLTR-KIT-FC652
+
+  • TONER FILTER — 115.4% → DUE
+      ↳ Catalog: FLTR-KIT-FC652
+
+  • OZONE FILTER 2 — 115.4% → DUE
+      ↳ Catalog: FLTR-KIT-FC652
+
+  • VOC FILTER — 115.4% → DUE
+      ↳ Catalog: FLTR-KIT-FC652
+
+  • BELT BLADE — 115.4% → DUE
+      ↳ Catalog: TBU-KIT-FC556
+
+  • TRANSFER ROLLER — 115.4% → DUE
+      ↳ Catalog: CR-FC556TR2
+
+  • FUSER BELT — 115.4% → DUE
+      ↳ Catalog: FR-KIT-FC556-FU
+
+  • PRESS ROLLER — 115.4% → DUE
+      ↳ Catalog: FR-KIT-FC556-FU
+
+  • FUSER PAD — 115.4% → DUE
+      ↳ Catalog: FR-KIT-FC556-FU
+
+  • OIL/SLIDE SHEET — 115.4% → DUE
+      ↳ Catalog: FR-KIT-FC556-FU
+
+  • CLEANING PAD — 115.4% → DUE
+      ↳ Catalog: (N/A)
+
+  • DF PICK UP ROLLER — 56.4% → DUE
+      ↳ Catalog: KIT-ROL-MR-4010
+
+  • DF FEED ROLLER — 56.4% → DUE
+      ↳ Catalog: KIT-ROL-MR-4010
+
+  • DF SEP ROLLER — 56.4% → DUE
+      ↳ Catalog: KIT-ROL-MR-4010
+
+
+Final Parts
+───────────────────────────────────────────────────────────────
+(Qty → Part Number → Unit )
+1x → 6LL59316000 → FLTR-KIT-FC652
+1x → 6LK41165000 → TBU-KIT-FC556
+1x → 6LK41390000 → CR-FC556TR2
+1x → 6LK42666000 → FR-KIT-FC556-FU
+1x → 6LL48460000 → KIT-ROL-MR-4010
+
+───────────────────────────────────────────────────────────────
+End of Report
+───────────────────────────────────────────────────────────────

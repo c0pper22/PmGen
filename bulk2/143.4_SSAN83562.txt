@@ -1,0 +1,132 @@
+Model: TOSHIBA e-STUDIO4525AC  |  Serial: SSAN83562  |  Date: 11-05-2025 02:18
+Due threshold: 52.0%  •  Basis: PAGE
+
+Counters:
+  Color: 143484  Black: 37479  DF: 19103  Total: 180963
+
+───────────────────────────────────────────────────────────────
+Most-Due Items
+───────────────
+  • GRID[Y] — 143.4% → DUE
+      ↳ Catalog: EPU-KIT-FC425CLR
+
+  • MAIN CHARGER NEEDLE[Y] — 143.4% → DUE
+      ↳ Catalog: EPU-KIT-FC425CLR
+
+  • CHARGER CLEANING PAD[Y] — 143.4% → DUE
+      ↳ Catalog: EPU-KIT-FC425CLR
+
+  • DRUM[M] — 143.4% → DUE
+      ↳ Catalog: OD-FC50
+
+  • DRUM BLADE[M] — 143.4% → DUE
+      ↳ Catalog: EPU-KIT-FC425CLR
+
+  • GRID[M] — 143.4% → DUE
+      ↳ Catalog: EPU-KIT-FC425CLR
+
+  • MAIN CHARGER NEEDLE[M] — 143.4% → DUE
+      ↳ Catalog: EPU-KIT-FC425CLR
+
+  • CHARGER CLEANING PAD[M] — 143.4% → DUE
+      ↳ Catalog: EPU-KIT-FC425CLR
+
+  • DRUM[C] — 143.4% → DUE
+      ↳ Catalog: OD-FC50
+
+  • DRUM BLADE[C] — 143.4% → DUE
+      ↳ Catalog: EPU-KIT-FC425CLR
+
+  • GRID[C] — 143.4% → DUE
+      ↳ Catalog: EPU-KIT-FC425CLR
+
+  • MAIN CHARGER NEEDLE[C] — 143.4% → DUE
+      ↳ Catalog: EPU-KIT-FC425CLR
+
+  • CHARGER CLEANING PAD[C] — 143.4% → DUE
+      ↳ Catalog: EPU-KIT-FC425CLR
+
+  • DRUM GAP SPACER (Y) — 143.4% → DUE
+      ↳ Catalog: (N/A)
+
+  • DRUM GAP SPACER (M) — 143.4% → DUE
+      ↳ Catalog: (N/A)
+
+  • DRUM GAP SPACER (C) — 143.4% → DUE
+      ↳ Catalog: (N/A)
+
+  • DRUM[K] — 90.2% → DUE
+      ↳ Catalog: OD-FC505
+
+  • DRUM BLADE[K] — 90.2% → DUE
+      ↳ Catalog: DEV-KIT-FC425K
+
+  • GRID[K] — 90.2% → DUE
+      ↳ Catalog: DEV-KIT-FC425K
+
+  • MAIN CHARGER NEEDLE[K] — 90.2% → DUE
+      ↳ Catalog: DEV-KIT-FC425K
+
+  • CHARGER CLEANING PAD[K] — 90.2% → DUE
+      ↳ Catalog: DEV-KIT-FC425K
+
+  • DEVELOPER[K] — 90.2% → DUE
+      ↳ Catalog: DEV-KIT-FC425K
+
+  • BELT BLADE — 90.2% → DUE
+      ↳ Catalog: TBU-KIT-FC50
+
+  • TRANSFER ROLLER — 90.2% → DUE
+      ↳ Catalog: CR-FC30TR2
+
+  • DRUM GAP SPACER (K) — 90.2% → DUE
+      ↳ Catalog: (N/A)
+
+  • DRUM[Y] — 88.8% → DUE
+      ↳ Catalog: OD-FC50
+
+  • DRUM BLADE[Y] — 88.8% → DUE
+      ↳ Catalog: EPU-KIT-FC425CLR
+
+  • DEVELOPER[Y] — 71.7% → DUE
+      ↳ Catalog: D-FC425-Y
+
+  • DEVELOPER[M] — 71.7% → DUE
+      ↳ Catalog: D-FC425-M
+
+  • DEVELOPER[C] — 71.7% → DUE
+      ↳ Catalog: D-FC425-C
+
+  • FUSER BELT — 62.6% → DUE
+      ↳ Catalog: FR-KIT-FC505H
+
+  • PRESS ROLLER — 62.6% → DUE
+      ↳ Catalog: FR-KIT-FC505H
+
+  • PRESS ROLLER FINGER — 62.6% → DUE
+      ↳ Catalog: FR-KIT-FC505H
+
+  • FUSER PAD — 62.6% → DUE
+      ↳ Catalog: FR-KIT-FC505H
+
+  • OIL/SLIDE SHEET — 62.6% → DUE
+      ↳ Catalog: FR-KIT-FC505H
+
+
+Final Parts
+───────────────────────────────────────────────────────────────
+(Qty → Part Number → Unit )
+1x → 6LL51797000 → EPU-KIT-FC425CLR
+3x → 6LJ70598000 → OD-FC50
+1x → 6LK49015000 → OD-FC505
+1x → 6LL51796000 → DEV-KIT-FC425K
+1x → 6LJ70575000 → TBU-KIT-FC50
+1x → 6LJ58192000 → CR-FC30TR2
+1x → 6LL51735000 → D-FC425-Y
+1x → 6LL51735100 → D-FC425-M
+1x → 6LL51735200 → D-FC425-C
+1x → 6LK56860000 → FR-KIT-FC505H
+
+───────────────────────────────────────────────────────────────
+End of Report
+───────────────────────────────────────────────────────────────

@@ -1,0 +1,146 @@
+Model: TOSHIBA e-STUDIO5525AC  |  Serial: CSJM49963  |  Date: 11-05-2025 21:48
+Due threshold: 52.0%  •  Basis: PAGE
+
+Counters:
+  Color: 345882  Black: 71914  DF: 20420  Total: 417796
+
+───────────────────────────────────────────────────────────────
+Most-Due Items
+───────────────
+  • DRUM[Y] — 257.0% → DUE
+      ↳ Catalog: OD-FC50
+
+  • DRUM BLADE[Y] — 257.0% → DUE
+      ↳ Catalog: EPU-KIT-FC425CLR
+
+  • GRID[Y] — 257.0% → DUE
+      ↳ Catalog: EPU-KIT-FC425CLR
+
+  • MAIN CHARGER NEEDLE[Y] — 257.0% → DUE
+      ↳ Catalog: EPU-KIT-FC425CLR
+
+  • CHARGER CLEANING PAD[Y] — 257.0% → DUE
+      ↳ Catalog: EPU-KIT-FC425CLR
+
+  • DRUM[M] — 257.0% → DUE
+      ↳ Catalog: OD-FC50
+
+  • DRUM BLADE[M] — 257.0% → DUE
+      ↳ Catalog: EPU-KIT-FC425CLR
+
+  • GRID[M] — 257.0% → DUE
+      ↳ Catalog: EPU-KIT-FC425CLR
+
+  • MAIN CHARGER NEEDLE[M] — 257.0% → DUE
+      ↳ Catalog: EPU-KIT-FC425CLR
+
+  • CHARGER CLEANING PAD[M] — 257.0% → DUE
+      ↳ Catalog: EPU-KIT-FC425CLR
+
+  • DRUM[C] — 257.0% → DUE
+      ↳ Catalog: OD-FC50
+
+  • DRUM BLADE[C] — 257.0% → DUE
+      ↳ Catalog: EPU-KIT-FC425CLR
+
+  • GRID[C] — 257.0% → DUE
+      ↳ Catalog: EPU-KIT-FC425CLR
+
+  • MAIN CHARGER NEEDLE[C] — 257.0% → DUE
+      ↳ Catalog: EPU-KIT-FC425CLR
+
+  • CHARGER CLEANING PAD[C] — 257.0% → DUE
+      ↳ Catalog: EPU-KIT-FC425CLR
+
+  • DRUM GAP SPACER (Y) — 257.0% → DUE
+      ↳ Catalog: (N/A)
+
+  • DRUM GAP SPACER (M) — 257.0% → DUE
+      ↳ Catalog: (N/A)
+
+  • DRUM GAP SPACER (C) — 257.0% → DUE
+      ↳ Catalog: (N/A)
+
+  • FEED ROLLER (3rd CST.) — 202.6% → DUE
+      ↳ Catalog: ROL-KIT-FC30-U
+
+  • PICK UP ROLLER (3rd CST.) — 202.4% → DUE
+      ↳ Catalog: ROL-KIT-FC30-U
+
+  • SEP ROLLER/PAD (3rd CST.) — 202.4% → DUE
+      ↳ Catalog: ROL-KIT-FC30-U
+
+  • DEVELOPER[Y] — 179.6% → DUE
+      ↳ Catalog: D-FC425-Y
+
+  • DEVELOPER[M] — 179.6% → DUE
+      ↳ Catalog: D-FC425-M
+
+  • DEVELOPER[C] — 179.6% → DUE
+      ↳ Catalog: D-FC425-C
+
+  • FUSER BELT — 130.2% → DUE
+      ↳ Catalog: FR-KIT-FC6525
+
+  • PRESS ROLLER — 130.2% → DUE
+      ↳ Catalog: FR-KIT-FC6525
+
+  • PRESS ROLLER FINGER — 130.2% → DUE
+      ↳ Catalog: FR-KIT-FC6525
+
+  • FUSER PAD — 130.2% → DUE
+      ↳ Catalog: FR-KIT-FC6525
+
+  • OIL/SLIDE SHEET — 130.2% → DUE
+      ↳ Catalog: FR-KIT-FC6525
+
+  • DRUM[K] — 110.8% → DUE
+      ↳ Catalog: OD-FC505
+
+  • DRUM BLADE[K] — 110.8% → DUE
+      ↳ Catalog: DEV-KIT-FC425K
+
+  • GRID[K] — 110.8% → DUE
+      ↳ Catalog: DEV-KIT-FC425K
+
+  • MAIN CHARGER NEEDLE[K] — 110.8% → DUE
+      ↳ Catalog: DEV-KIT-FC425K
+
+  • CHARGER CLEANING PAD[K] — 110.8% → DUE
+      ↳ Catalog: DEV-KIT-FC425K
+
+  • DEVELOPER[K] — 110.8% → DUE
+      ↳ Catalog: DEV-KIT-FC425K
+
+  • BELT BLADE — 110.8% → DUE
+      ↳ Catalog: TBU-KIT-FC50
+
+  • TRANSFER ROLLER — 110.8% → DUE
+      ↳ Catalog: CR-FC30TR2
+
+  • DRUM GAP SPACER (K) — 110.8% → DUE
+      ↳ Catalog: (N/A)
+
+  • OZONE FILTER — 57.9% → DUE
+      ↳ Catalog: FILTER-OZN-KCH-A08K-X2
+
+
+Final Parts
+───────────────────────────────────────────────────────────────
+(Qty → Part Number → Unit )
+3x → 6LJ70598000 → OD-FC50
+1x → 6LL51797000 → EPU-KIT-FC425CLR
+1x → 6LK50755000 → ROL-KIT-FC30-U
+1x → 6LL51735000 → D-FC425-Y
+1x → 6LL51735100 → D-FC425-M
+1x → 6LL51735200 → D-FC425-C
+1x → 6LL51811000 → FR-KIT-FC6525
+1x → 6LK49015000 → OD-FC505
+1x → 6LL51796000 → DEV-KIT-FC425K
+1x → 6LJ70575000 → TBU-KIT-FC50
+1x → 6LJ58192000 → CR-FC30TR2
+1x → 6LL42620000 → FILTER-OZN-KCH-A08K-X2
+
+───────────────────────────────────────────────────────────────
+End of Report
+───────────────────────────────────────────────────────────────

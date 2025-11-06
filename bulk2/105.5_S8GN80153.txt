@@ -1,0 +1,69 @@
+Model: TOSHIBA e-STUDIO6529A  |  Serial: S8GN80153  |  Date: 11-05-2025 22:25
+Due threshold: 52.0%  •  Basis: PAGE
+
+Counters:
+  Color: 0  Black: 621005  DF: 156865  Total: 621005
+
+───────────────────────────────────────────────────────────────
+Most-Due Items
+───────────────
+  • DRUM[K] — 105.5% → DUE
+      ↳ Catalog: (N/A)
+
+  • DRUM BLADE[K] — 105.5% → DUE
+      ↳ Catalog: (N/A)
+
+  • GRID[K] — 105.5% → DUE
+      ↳ Catalog: (N/A)
+
+  • MAIN CHARGER NEEDLE[K] — 105.5% → DUE
+      ↳ Catalog: (N/A)
+
+  • CHARGER CLEANING PAD[K] — 105.5% → DUE
+      ↳ Catalog: (N/A)
+
+  • OZONE FILTER 1 — 105.5% → DUE
+      ↳ Catalog: (N/A)
+
+  • TONER FILTER — 105.5% → DUE
+      ↳ Catalog: (N/A)
+
+  • OZONE FILTER 2 — 105.5% → DUE
+      ↳ Catalog: (N/A)
+
+  • BELT BLADE — 105.5% → DUE
+      ↳ Catalog: (N/A)
+
+  • CLEANING PAD — 105.5% → DUE
+      ↳ Catalog: (N/A)
+
+  • TRANSFER ROLLER — 105.5% → DUE
+      ↳ Catalog: (N/A)
+
+  • PICK UP ROLLER (T-LCF) — 95.6% → DUE
+      ↳ Catalog: (N/A)
+
+  • FEED ROLLER (T-LCF) — 95.6% → DUE
+      ↳ Catalog: (N/A)
+
+  • SEP ROLLER/PAD (T-LCF) — 95.6% → DUE
+      ↳ Catalog: (N/A)
+
+  • PICK UP ROLLER (1st CST.) — 63.0% → DUE
+      ↳ Catalog: (N/A)
+
+  • FEED ROLLER (1st CST.) — 63.0% → DUE
+      ↳ Catalog: (N/A)
+
+  • SEP ROLLER/PAD (1st CST.) — 63.0% → DUE
+      ↳ Catalog: (N/A)
+
+
+Final Parts
+───────────────────────────────────────────────────────────────
+(Qty → Part Number → Unit )
+(no final parts)
+
+───────────────────────────────────────────────────────────────
+End of Report
+───────────────────────────────────────────────────────────────

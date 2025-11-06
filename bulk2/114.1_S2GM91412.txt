@@ -1,0 +1,81 @@
+Model: TOSHIBA e-STUDIO8518A  |  Serial: S2GM91412  |  Date: 11-05-2025 00:11
+Due threshold: 52.0%  •  Basis: PAGE
+
+Counters:
+  Color: 0  Black: 1257026  DF: 29804  Total: 1257026
+
+───────────────────────────────────────────────────────────────
+Most-Due Items
+───────────────
+  • PICK UP ROLLER (1st CST.) — 114.1% → DUE
+      ↳ Catalog: (N/A)
+
+  • FEED ROLLER (1st CST.) — 114.1% → DUE
+      ↳ Catalog: (N/A)
+
+  • SEP ROLLER/PAD (1st CST.) — 114.1% → DUE
+      ↳ Catalog: (N/A)
+
+  • PICK UP ROLLER (T-LCF) — 82.8% → DUE
+      ↳ Catalog: (N/A)
+
+  • FEED ROLLER (T-LCF) — 82.8% → DUE
+      ↳ Catalog: (N/A)
+
+  • SEP ROLLER/PAD (T-LCF) — 82.8% → DUE
+      ↳ Catalog: (N/A)
+
+  • FUSER BELT — 72.2% → DUE
+      ↳ Catalog: (N/A)
+
+  • PRESS ROLLER — 72.2% → DUE
+      ↳ Catalog: (N/A)
+
+  • FUSER PAD — 72.2% → DUE
+      ↳ Catalog: (N/A)
+
+  • OIL/SLIDE SHEET — 72.2% → DUE
+      ↳ Catalog: (N/A)
+
+  • DRUM[K] — 69.1% → DUE
+      ↳ Catalog: (N/A)
+
+  • DRUM BLADE[K] — 69.1% → DUE
+      ↳ Catalog: (N/A)
+
+  • GRID[K] — 69.1% → DUE
+      ↳ Catalog: (N/A)
+
+  • MAIN CHARGER NEEDLE[K] — 69.1% → DUE
+      ↳ Catalog: (N/A)
+
+  • CHARGER CLEANING PAD[K] — 69.1% → DUE
+      ↳ Catalog: (N/A)
+
+  • OZONE FILTER 1 — 69.1% → DUE
+      ↳ Catalog: (N/A)
+
+  • TONER FILTER — 69.1% → DUE
+      ↳ Catalog: (N/A)
+
+  • OZONE FILTER 2 — 69.1% → DUE
+      ↳ Catalog: (N/A)
+
+  • BELT BLADE — 69.1% → DUE
+      ↳ Catalog: (N/A)
+
+  • CLEANING PAD — 69.1% → DUE
+      ↳ Catalog: (N/A)
+
+  • TRANSFER ROLLER — 69.1% → DUE
+      ↳ Catalog: (N/A)
+
+
+Final Parts
+───────────────────────────────────────────────────────────────
+(Qty → Part Number → Unit )
+(no final parts)
+
+───────────────────────────────────────────────────────────────
+End of Report
+───────────────────────────────────────────────────────────────

@@ -1,0 +1,59 @@
+Model: TOSHIBA e-STUDIO5525AC  |  Serial: CSKM53612  |  Date: 11-04-2025 23:18
+Due threshold: 52.0%  •  Basis: PAGE
+
+Counters:
+  Color: 99227  Black: 182531  DF: 112563  Total: 281758
+
+───────────────────────────────────────────────────────────────
+Most-Due Items
+───────────────
+  • DEVELOPER[K] — 133.5% → DUE
+      ↳ Catalog: DEV-KIT-FC425K
+
+  • FUSER BELT — 83.2% → DUE
+      ↳ Catalog: FR-KIT-FC6525
+
+  • PRESS ROLLER — 83.2% → DUE
+      ↳ Catalog: FR-KIT-FC6525
+
+  • PRESS ROLLER FINGER — 83.2% → DUE
+      ↳ Catalog: FR-KIT-FC6525
+
+  • FUSER PAD — 83.2% → DUE
+      ↳ Catalog: FR-KIT-FC6525
+
+  • OIL/SLIDE SHEET — 83.2% → DUE
+      ↳ Catalog: FR-KIT-FC6525
+
+  • PICK UP ROLLER (1st CST.) — 68.7% → DUE
+      ↳ Catalog: ROL-KIT-FC30-U
+
+  • FEED ROLLER (1st CST.) — 68.7% → DUE
+      ↳ Catalog: ROL-KIT-FC30-U
+
+  • SEP ROLLER/PAD (1st CST.) — 68.7% → DUE
+      ↳ Catalog: ROL-KIT-FC30-U
+
+  • DEVELOPER[Y] — 60.4% → DUE
+      ↳ Catalog: D-FC425-Y
+
+  • DEVELOPER[M] — 60.4% → DUE
+      ↳ Catalog: D-FC425-M
+
+  • DEVELOPER[C] — 60.4% → DUE
+      ↳ Catalog: D-FC425-C
+
+
+Final Parts
+───────────────────────────────────────────────────────────────
+(Qty → Part Number → Unit )
+1x → 6LL51796000 → DEV-KIT-FC425K
+1x → 6LL51811000 → FR-KIT-FC6525
+1x → 6LK50755000 → ROL-KIT-FC30-U
+1x → 6LL51735000 → D-FC425-Y
+1x → 6LL51735100 → D-FC425-M
+1x → 6LL51735200 → D-FC425-C
+
+───────────────────────────────────────────────────────────────
+End of Report
+───────────────────────────────────────────────────────────────

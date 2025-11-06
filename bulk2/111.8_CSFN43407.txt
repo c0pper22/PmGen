@@ -1,0 +1,89 @@
+Model: TOSHIBA e-STUDIO2525AC  |  Serial: CSFN43407  |  Date: 11-05-2025 01:55
+Due threshold: 52.0%  •  Basis: PAGE
+
+Counters:
+  Color: 86195  Black: 135406  DF: 45253  Total: 221601
+
+───────────────────────────────────────────────────────────────
+Most-Due Items
+───────────────
+  • FUSER BELT — 111.8% → DUE
+      ↳ Catalog: FR-KIT-FC3525
+
+  • PRESS ROLLER — 111.8% → DUE
+      ↳ Catalog: FR-KIT-FC3525
+
+  • PRESS ROLLER FINGER — 111.8% → DUE
+      ↳ Catalog: FR-KIT-FC3525
+
+  • PICK UP ROLLER (3rd CST.) — 80.6% → DUE
+      ↳ Catalog: ROL-KIT-FC30-U
+
+  • FEED ROLLER (3rd CST.) — 80.6% → DUE
+      ↳ Catalog: ROL-KIT-FC30-U
+
+  • SEP ROLLER/PAD (3rd CST.) — 80.6% → DUE
+      ↳ Catalog: ROL-KIT-FC30-U
+
+  • PICK UP ROLLER (1st CST.) — 77.9% → DUE
+      ↳ Catalog: ROL-KIT-FC30-U
+
+  • FEED ROLLER (1st CST.) — 77.9% → DUE
+      ↳ Catalog: ROL-KIT-FC30-U
+
+  • SEP ROLLER/PAD (1st CST.) — 77.9% → DUE
+      ↳ Catalog: ROL-KIT-FC30-U
+
+  • DRUM[K] — 71.9% → DUE
+      ↳ Catalog: OD-FC505
+
+  • DRUM BLADE[K] — 71.9% → DUE
+      ↳ Catalog: DEV-KIT-FC425K
+
+  • GRID[K] — 71.9% → DUE
+      ↳ Catalog: DEV-KIT-FC425K
+
+  • MAIN CHARGER NEEDLE[K] — 71.9% → DUE
+      ↳ Catalog: DEV-KIT-FC425K
+
+  • CHARGER CLEANING PAD[K] — 71.9% → DUE
+      ↳ Catalog: DEV-KIT-FC425K
+
+  • DEVELOPER[K] — 71.9% → DUE
+      ↳ Catalog: DEV-KIT-FC425K
+
+  • DRUM GAP SPACER (K) — 71.9% → DUE
+      ↳ Catalog: (N/A)
+
+  • DEVELOPER[Y] — 62.0% → DUE
+      ↳ Catalog: D-FC425-Y
+
+  • DEVELOPER[M] — 62.0% → DUE
+      ↳ Catalog: D-FC425-M
+
+  • DEVELOPER[C] — 62.0% → DUE
+      ↳ Catalog: D-FC425-C
+
+  • BELT BLADE — 59.7% → DUE
+      ↳ Catalog: TBU-KIT-FC50
+
+  • TRANSFER ROLLER — 59.7% → DUE
+      ↳ Catalog: CR-FC30TR2
+
+
+Final Parts
+───────────────────────────────────────────────────────────────
+(Qty → Part Number → Unit )
+1x → 6LL51807000 → FR-KIT-FC3525
+2x → 6LK50755000 → ROL-KIT-FC30-U
+1x → 6LK49015000 → OD-FC505
+1x → 6LL51796000 → DEV-KIT-FC425K
+1x → 6LL51735000 → D-FC425-Y
+1x → 6LL51735100 → D-FC425-M
+1x → 6LL51735200 → D-FC425-C
+1x → 6LJ70575000 → TBU-KIT-FC50
+1x → 6LJ58192000 → CR-FC30TR2
+
+───────────────────────────────────────────────────────────────
+End of Report
+───────────────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 # 🧭 PmGen — Toshiba e-STUDIO Preventive Maintenance Generator
 
 **PmGen** is a cross-platform Python 3.13 application that automates the generation of preventive-maintenance (PM) parts lists for Toshiba e-STUDIO MFP devices.  
-It fetches, parses, and analyzes official **PM Support Code List** reports from Toshiba e-Service, applies smart rule-based logic to determine *due* items, and outputs structured “Most-Due Items” and “Final Parts” reports with part-number resolution via the local **Ribon.accdb** database.
+It fetches, parses, and analyzes official **PM Support Code List** reports from Toshiba e-Service, applies smart rule-based logic to determine _due_ items, and outputs structured “Most-Due Items” and “Final Parts” reports with part-number resolution via the local **Ribon.accdb** database.
 
 Built with **PyQt 6**, **threaded HTTP sessions**, and a **modular rule engine**, PmGen can operate interactively or in unattended “bulk” mode across an entire fleet.
 
@@ -9,15 +9,14 @@ Built with **PyQt 6**, **threaded HTTP sessions**, and a **modular rule engine**
 
 ## ✨ Features
 
-| Category | Highlights |
-|-----------|-------------|
+| Category                 | Highlights                                                                                                                                                                                             |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **Data Parsing & Rules** | Parses official PM Support Code List text/CSV exports.<br>Applies chained rules: `GenericLifeRule`, `KitLinkRule`, `QtyOverrideRule`.<br>Supports per-color and aggregate counting (via `ColorScope`). |
-| **Part Resolution** | Uses Microsoft Access database (`Ribon.accdb`) to expand catalog kit codes to actual part numbers (`PARTS_NO`).<br>Selects units by latest creation dates. |
-| **Authentication** | Secure login using `keyring` (stores password in OS credential vault).<br>Optional “Stay Logged In” and automatic startup login. |
-| **Bulk Runner** | Multi-threaded fleet processing with configurable thread pool, Top N filtering, blacklist, and “unpack-date” filter.<br>Writes one text report per serial + consolidated summary. |
-| **Customization** | Adjustable due-threshold (0.01–2.00 × life).<br>Switchable life-basis (page / drive).<br>“Show All Items” toggle to include sub-threshold parts. |
-| **Extensible** | Fully modular: catalog registry, canon maps, rules system, HTTP layer, UI separated. |
-| **Cross-Platform** | Runs on Windows 10+ and Linux (Arch, Ubuntu). No external DLLs beyond the Access driver for Windows. |
+| **Part Resolution**      | Uses Microsoft Access database (`Ribon.accdb`) to expand catalog kit codes to actual part numbers (`PARTS_NO`).<br>Selects units by latest creation dates.                                             |
+| **Authentication**       | Secure login using `keyring` (stores password in OS credential vault).<br>Optional “Stay Logged In” and automatic startup login.                                                                       |
+| **Bulk Runner**          | Multi-threaded fleet processing with configurable thread pool, Top N filtering, blacklist, and “unpack-date” filter.<br>Writes one text report per serial + consolidated summary.                      |
+| **Customization**        | Adjustable due-threshold (0.01–2.00 × life).<br>Switchable life-basis (page / drive).<br>“Show All Items” toggle to include sub-threshold parts.                                                       |
+| **Extensible**           | Modular: catalog registry, canon maps, rules system, HTTP layer, UI separated.                                                                                                                         |
 
 ---
 
@@ -27,30 +26,28 @@ Built with **PyQt 6**, **threaded HTTP sessions**, and a **modular rule engine**
 
 pmgen/
 ├── ui/
-│   ├── app.py            # Entry-point bootstrapper (GUI)
-│   └── main_window.py    # PyQt MainWindow + dialogs + BulkRunner
+│   ├── app.py              # Entry-point bootstrapper (GUI)
+│   └── main_window.py      # PyQt MainWindow + dialogs + BulkRunner
 ├── engine/
-│   ├── run_rules.py      # Orchestrates rule chain execution
-│   ├── single_report.py  # Parse → Rule → Format pipeline
-│   ├── resolve_to_pn.py  # Kit → Part Number resolver
-│   └── generic_life.py   # Example rule
+│   ├── run_rules.py        # Orchestrates rule chain execution
+│   ├── single_report.py    # Parse → Rule → Format pipeline
+│   └── resolve_to_pn.py    # Kit → Part Number resolver
 ├── canon/
-│   └── canon_utils.py
+│   └── canon_utils.py      # Canon Mappings
 ├── rules/
-│   ├── base.py           # RuleBase & Context classes
-│   ├── counter_sanity.py # Sanity checks
-│   ├── kit_link.py       # Canon → Kit resolution
-│   ├── qty_override.py   # Manual quantity overrides
-│   └── generic_life.py   # Core life % rule
+│   ├── base.py             # RuleBase & Context classes
+│   ├── kit_link.py         # Canon → Kit resolution
+│   ├── qty_override.py     # Manual quantity overrides
+│   └── generic_life.py     # Core life % rule
 ├── catalog/
 │   └── part_kit_catalog.py # Full model registry & kits
 ├── io/
-│   ├── http_client.py    # SessionPool + e-Service fetching
-│   ├── ribon_db.py       # Access DB queries
-│   └── fetch_serials.py  # Index retrieval
+│   ├── http_client.py      # SessionPool + e-Service fetching
+│   ├── ribon_db.py         # Access DB queries
+│   └── fetch_serials.py    # Index retrieval
 ├── parsing/
-│   └── parse_pm_report.py # Text parser → PmReport
-└── types.py              # Dataclasses (PmReport, PmItem, Finding, Selection)
+│   └── parse_pm_report.py  # Text parser → PmReport
+└── types.py                # Dataclasses (PmReport, PmItem, Finding, Selection)
 
 ```
 
@@ -72,23 +69,25 @@ PM_Report(.txt/.csv)
 ▼
 [single_report.format_report] → Human-readable output
 
-````
+```
 
 ---
 
 ## ⚙️ Installation
 
 ### Prerequisites
+
 - **Python 3.13+**
 - **Microsoft Access Database Engine** (on Windows)  
   or `mdbtools` (on Linux for read-only access)
-  *this gets downloaded with RIBON*
+  _this gets downloaded with RIBON_
 - Recommended: `pipx` or virtual environment
 
 ### Install dependencies
+
 ```bash
 pip install -r requirements.txt
-````
+```
 
 ---
 
@@ -105,20 +104,21 @@ python -m pmgen.ui.app
 3. Choose “Generate” and enter a serial number (e.g., **CNAM66582**).
 4. The output panel displays a colorized report:
 
-   * **Most-Due Items**
-   * **Final Parts (Qty → PN → Kit)**
-   * **Counters / Thresholds**
+   - **Most-Due Items**
+   - **Final Parts (Qty → PN → Kit)**
+   - **Counters / Thresholds**
 
 ### Bulk Mode
 
 1. Open **Bulk ▾ → Bulk Settings…**
 2. Configure:
 
-   * Top N results
-   * Thread pool size
-   * Output folder
-   * Blacklist patterns (`*CNGM*`, `S8GN*`, etc.)
-   * Optional “Unpacking date filter”
+   - Top N results
+   - Thread pool size
+   - Output folder
+   - Blacklist patterns (`*CNGM*`, `S8GN*`, etc.)
+   - Optional “Unpacking date filter”
+
 3. Choose **Bulk ▾ → Run Bulk…**
    → Runs threaded fleet analysis and writes one report per device + summary.
 
@@ -128,11 +128,11 @@ python -m pmgen.ui.app
 
 Rules derive from `RuleBase` and register under `pmgen.rules`.
 
-| Rule                  | Purpose                                                                           |
-| --------------------- | --------------------------------------------------------------------------------- |
-| **GenericLifeRule**   | Flags items ≥ threshold of life used (`page` or `drive`).                         |
-| **KitLinkRule**       | Maps canonized descriptors (e.g., `DRUM[Y]`) to kit codes via `part_kit_catalog`. |
-| **QtyOverrideRule**   | Forces custom quantities for specific kits (e.g., `FILTER-OZN-KCH-A08K: 2`).      |
+| Rule                | Purpose                                                                           |
+| ------------------- | --------------------------------------------------------------------------------- |
+| **GenericLifeRule** | Flags items ≥ threshold of life used (`page` or `drive`).                         |
+| **KitLinkRule**     | Maps canonized descriptors (e.g., `DRUM[Y]`) to kit codes via `part_kit_catalog`. |
+| **QtyOverrideRule** | Forces custom quantities for specific kits (e.g., `FILTER-OZN-KCH-A08K: 2`).      |
 
 Rules operate sequentially and emit `Finding` objects.
 You can add custom rules by creating `pmgen/rules/my_rule.py` and importing it in `run_rules.py`.
@@ -302,7 +302,7 @@ VOC FILTER                   -> VOC FILTER
 YELLOW DEVELOPER             -> DEVELOPER[Y]
 ```
 
-This ensures stable matching between parsed reports and catalog entries. You may notice not all descriptors get converted into a canon descriptor. This is because either they may differ too much between models or may not have been deemed necesarry for determining if the PM kit/part needs replaced. 
+This ensures stable matching between parsed reports and catalog entries. You may notice not all descriptors get converted into a canon descriptor. This is because either they may differ too much between models or may not have been deemed necesarry for determining if the PM kit/part needs replaced.
 
 Run stand-alone tests:
 
@@ -314,10 +314,10 @@ python -m pmgen.catalog.canon_utils
 
 ## 🧵 Session & Networking
 
-* `http_client.py` provides `SessionPool` for thread-safe reuse.
-* `get_serials_after_login()` → fetches all active serial numbers.
-* `get_service_file_bytes(serial, "PMSupport")` → downloads the PM report.
-* `get_unpacking_date()` → returns `date` of initial device unpacking.
+- `http_client.py` provides `SessionPool` for thread-safe reuse.
+- `get_serials_after_login()` → fetches all active serial numbers.
+- `get_service_file_bytes(serial, "PMSupport")` → downloads the PM report.
+- `get_unpacking_date()` → returns `date` of initial device unpacking.
 
 All HTTP calls are `requests.Session` based with shared cookies.
 
@@ -518,16 +518,17 @@ Final Parts
 ───────────────────────────────────────────────────────────────
 End of Report
 ```
+
 ---
 
 ## 🧩 Extending the System
 
-| Goal                 | How                                                   |
-| -------------------- | ----------------------------------------------------- |
-| Add new model        | Define its `Catalog([...])` and add to `REGISTRY`.    |
-| Add new rule         | Drop `rules/my_rule.py` → extend `run_rules.py`.      |
-| Add new part mapping | Update `canon_utils.CANON_MAP`.                       |
-| Adjust qty override  | Edit `qty_override.py → QTY_OVERRIDES`.               |
+| Goal                 | How                                                |
+| -------------------- | -------------------------------------------------- |
+| Add new model        | Define its `Catalog([...])` and add to `REGISTRY`. |
+| Add new rule         | Drop `rules/my_rule.py` → extend `run_rules.py`.   |
+| Add new part mapping | Update `canon_utils.CANON_MAP`.                    |
+| Adjust qty override  | Edit `qty_override.py → QTY_OVERRIDES`.            |
 
 ---
 

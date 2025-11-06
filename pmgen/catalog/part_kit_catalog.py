@@ -789,11 +789,25 @@ REGISTRY = {
 #     "9029A": _9029A,
 }
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# All PmUnit names listed here are treated as *per-color kits* by the rules engine.
+# That means each kit will count **once per color channel (K/C/M/Y)**, regardless
+# of how many color-tagged canons inside it are due (e.g., DRUM[K], GRID[K], etc.).
+# 
+# This prevents double-counting within multi-part developer/drum units such as
+# EPU-FC330-K or EPU-KIT-FC556-G, which include several related K-channel canons.
+# ─────────────────────────────────────────────────────────────────────────────
 PER_COLOR_UNIT_NAMES = {
     EPU_KIT_FC556_G_K.unit_name,
     EPU_KIT_FC556_G_Y.unit_name,
     EPU_KIT_FC556_G_M.unit_name,
     EPU_KIT_FC556_G_C.unit_name,
+
+    EPU_FC330_K.unit_name,
+    EPU_FC330_Y.unit_name,
+    EPU_FC330_M.unit_name,
+    EPU_FC330_C.unit_name,
 }
 
 def get_catalog_for_model(model: str):

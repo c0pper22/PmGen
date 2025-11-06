@@ -1,0 +1,69 @@
+Model: TOSHIBA e-STUDIO7518A  |  Serial: C2KM41869  |  Date: 11-05-2025 04:05
+Due threshold: 52.0%  •  Basis: PAGE
+
+Counters:
+  Color: 0  Black: 1296553  DF: 39159  Total: 1296553
+
+───────────────────────────────────────────────────────────────
+Most-Due Items
+───────────────
+  • DRUM[K] — 111.3% → DUE
+      ↳ Catalog: (N/A)
+
+  • DRUM BLADE[K] — 111.3% → DUE
+      ↳ Catalog: (N/A)
+
+  • GRID[K] — 111.3% → DUE
+      ↳ Catalog: (N/A)
+
+  • MAIN CHARGER NEEDLE[K] — 111.3% → DUE
+      ↳ Catalog: (N/A)
+
+  • CHARGER CLEANING PAD[K] — 111.3% → DUE
+      ↳ Catalog: (N/A)
+
+  • OZONE FILTER 1 — 111.3% → DUE
+      ↳ Catalog: (N/A)
+
+  • TONER FILTER — 111.3% → DUE
+      ↳ Catalog: (N/A)
+
+  • OZONE FILTER 2 — 111.3% → DUE
+      ↳ Catalog: (N/A)
+
+  • BELT BLADE — 111.3% → DUE
+      ↳ Catalog: (N/A)
+
+  • CLEANING PAD — 111.3% → DUE
+      ↳ Catalog: (N/A)
+
+  • TRANSFER ROLLER — 111.3% → DUE
+      ↳ Catalog: (N/A)
+
+  • PICK UP ROLLER (T-LCF) — 97.7% → DUE
+      ↳ Catalog: (N/A)
+
+  • FEED ROLLER (T-LCF) — 97.7% → DUE
+      ↳ Catalog: (N/A)
+
+  • SEP ROLLER/PAD (T-LCF) — 97.7% → DUE
+      ↳ Catalog: (N/A)
+
+  • PICK UP ROLLER (2nd CST.) — 53.9% → DUE
+      ↳ Catalog: (N/A)
+
+  • FEED ROLLER (2nd CST.) — 53.9% → DUE
+      ↳ Catalog: (N/A)
+
+  • SEP ROLLER/PAD (2nd CST.) — 53.9% → DUE
+      ↳ Catalog: (N/A)
+
+
+Final Parts
+───────────────────────────────────────────────────────────────
+(Qty → Part Number → Unit )
+(no final parts)
+
+───────────────────────────────────────────────────────────────
+End of Report
+───────────────────────────────────────────────────────────────

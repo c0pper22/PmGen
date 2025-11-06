@@ -1,0 +1,126 @@
+Model: TOSHIBA e-STUDIO6527AC  |  Serial: S6GN80474  |  Date: 11-04-2025 22:41
+Due threshold: 52.0%  •  Basis: PAGE
+
+Counters:
+  Color: 333562  Black: 394131  DF: 23741  Total: 727693
+
+───────────────────────────────────────────────────────────────
+Most-Due Items
+───────────────
+  • DRUM[K] — 135.0% → DUE
+      ↳ Catalog: OD-FC556
+
+  • DRUM BLADE[K] — 135.0% → DUE
+      ↳ Catalog: EPU-KIT-FC556-G
+
+  • GRID[K] — 135.0% → DUE
+      ↳ Catalog: EPU-KIT-FC556-G
+
+  • MAIN CHARGER NEEDLE[K] — 135.0% → DUE
+      ↳ Catalog: EPU-KIT-FC556-G
+
+  • CHARGER CLEANING PAD[K] — 135.0% → DUE
+      ↳ Catalog: EPU-KIT-FC556-G
+
+  • OZONE FILTER 1 — 135.0% → DUE
+      ↳ Catalog: FLTR-KIT-FC652
+
+  • TONER FILTER — 135.0% → DUE
+      ↳ Catalog: FLTR-KIT-FC652
+
+  • OZONE FILTER 2 — 135.0% → DUE
+      ↳ Catalog: FLTR-KIT-FC652
+
+  • VOC FILTER — 135.0% → DUE
+      ↳ Catalog: FLTR-KIT-FC652
+
+  • BELT BLADE — 135.0% → DUE
+      ↳ Catalog: TBU-KIT-FC556
+
+  • TRANSFER ROLLER — 135.0% → DUE
+      ↳ Catalog: CR-FC556TR2
+
+  • FUSER BELT — 135.0% → DUE
+      ↳ Catalog: FR-KIT-FC556-FU
+
+  • PRESS ROLLER — 135.0% → DUE
+      ↳ Catalog: FR-KIT-FC556-FU
+
+  • FUSER PAD — 135.0% → DUE
+      ↳ Catalog: FR-KIT-FC556-FU
+
+  • OIL/SLIDE SHEET — 135.0% → DUE
+      ↳ Catalog: FR-KIT-FC556-FU
+
+  • CLEANING PAD — 135.0% → DUE
+      ↳ Catalog: (N/A)
+
+  • PICK UP ROLLER (T-LCF) — 96.0% → DUE
+      ↳ Catalog: ROL-KIT-FC75-U
+
+  • FEED ROLLER (T-LCF) — 96.0% → DUE
+      ↳ Catalog: ROL-KIT-FC75-U
+
+  • SEP ROLLER/PAD (T-LCF) — 96.0% → DUE
+      ↳ Catalog: ROL-KIT-FC75-U
+
+  • DRUM[Y] — 66.1% → DUE
+      ↳ Catalog: OD-FC556
+
+  • DRUM BLADE[Y] — 66.1% → DUE
+      ↳ Catalog: EPU-KIT-FC556-G
+
+  • GRID[Y] — 66.1% → DUE
+      ↳ Catalog: EPU-KIT-FC556-G
+
+  • MAIN CHARGER NEEDLE[Y] — 66.1% → DUE
+      ↳ Catalog: EPU-KIT-FC556-G
+
+  • CHARGER CLEANING PAD[Y] — 66.1% → DUE
+      ↳ Catalog: EPU-KIT-FC556-G
+
+  • DRUM[M] — 66.1% → DUE
+      ↳ Catalog: OD-FC556
+
+  • DRUM BLADE[M] — 66.1% → DUE
+      ↳ Catalog: EPU-KIT-FC556-G
+
+  • GRID[M] — 66.1% → DUE
+      ↳ Catalog: EPU-KIT-FC556-G
+
+  • MAIN CHARGER NEEDLE[M] — 66.1% → DUE
+      ↳ Catalog: EPU-KIT-FC556-G
+
+  • CHARGER CLEANING PAD[M] — 66.1% → DUE
+      ↳ Catalog: EPU-KIT-FC556-G
+
+  • DRUM[C] — 66.1% → DUE
+      ↳ Catalog: OD-FC556
+
+  • DRUM BLADE[C] — 66.1% → DUE
+      ↳ Catalog: EPU-KIT-FC556-G
+
+  • GRID[C] — 66.1% → DUE
+      ↳ Catalog: EPU-KIT-FC556-G
+
+  • MAIN CHARGER NEEDLE[C] — 66.1% → DUE
+      ↳ Catalog: EPU-KIT-FC556-G
+
+  • CHARGER CLEANING PAD[C] — 66.1% → DUE
+      ↳ Catalog: EPU-KIT-FC556-G
+
+
+Final Parts
+───────────────────────────────────────────────────────────────
+(Qty → Part Number → Unit )
+4x → 6LK40607000 → OD-FC556
+4x → 6LK40618000 → EPU-KIT-FC556-G
+1x → 6LL59316000 → FLTR-KIT-FC652
+1x → 6LK41165000 → TBU-KIT-FC556
+1x → 6LK41390000 → CR-FC556TR2
+1x → 6LK42666000 → FR-KIT-FC556-FU
+1x → 6LK41562000 → ROL-KIT-FC75-U
+
+───────────────────────────────────────────────────────────────
+End of Report
+───────────────────────────────────────────────────────────────

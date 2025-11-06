@@ -1,0 +1,84 @@
+Model: TOSHIBA e-STUDIO5525AC  |  Serial: CSDN34830  |  Date: 11-04-2025 23:23
+Due threshold: 52.0%  •  Basis: PAGE
+
+Counters:
+  Color: 9994  Black: 350631  DF: 248349  Total: 360625
+
+───────────────────────────────────────────────────────────────
+Most-Due Items
+───────────────
+  • DEVELOPER[K] — 170.9% → DUE
+      ↳ Catalog: DEV-KIT-FC425K
+
+  • FUSER BELT — 106.6% → DUE
+      ↳ Catalog: FR-KIT-FC6525
+
+  • PRESS ROLLER — 106.6% → DUE
+      ↳ Catalog: FR-KIT-FC6525
+
+  • PRESS ROLLER FINGER — 106.6% → DUE
+      ↳ Catalog: FR-KIT-FC6525
+
+  • FUSER PAD — 106.6% → DUE
+      ↳ Catalog: FR-KIT-FC6525
+
+  • OIL/SLIDE SHEET — 106.6% → DUE
+      ↳ Catalog: FR-KIT-FC6525
+
+  • DF PICK UP ROLLER — 102.5% → DUE
+      ↳ Catalog: KIT-ROL-MR-4010
+
+  • DF FEED ROLLER — 102.5% → DUE
+      ↳ Catalog: KIT-ROL-MR-4010
+
+  • DF SEP ROLLER — 102.5% → DUE
+      ↳ Catalog: KIT-ROL-MR-4010
+
+  • PICK UP ROLLER (LCF) — 96.4% → DUE
+      ↳ Catalog: ROL-KIT-KD-1073
+
+  • FEED ROLLER (LCF) — 96.4% → DUE
+      ↳ Catalog: ROL-KIT-KD-1073
+
+  • SEP ROLLER/PAD (LCF) — 96.4% → DUE
+      ↳ Catalog: ROL-KIT-KD-1073
+
+  • DRUM[K] — 80.2% → DUE
+      ↳ Catalog: OD-FC505
+
+  • DRUM BLADE[K] — 80.2% → DUE
+      ↳ Catalog: DEV-KIT-FC425K
+
+  • GRID[K] — 80.2% → DUE
+      ↳ Catalog: DEV-KIT-FC425K
+
+  • MAIN CHARGER NEEDLE[K] — 80.2% → DUE
+      ↳ Catalog: DEV-KIT-FC425K
+
+  • CHARGER CLEANING PAD[K] — 80.2% → DUE
+      ↳ Catalog: DEV-KIT-FC425K
+
+  • BELT BLADE — 80.2% → DUE
+      ↳ Catalog: TBU-KIT-FC50
+
+  • TRANSFER ROLLER — 80.2% → DUE
+      ↳ Catalog: CR-FC30TR2
+
+  • DRUM GAP SPACER (K) — 80.2% → DUE
+      ↳ Catalog: (N/A)
+
+
+Final Parts
+───────────────────────────────────────────────────────────────
+(Qty → Part Number → Unit )
+1x → 6LL51796000 → DEV-KIT-FC425K
+1x → 6LL51811000 → FR-KIT-FC6525
+1x → 6LL48460000 → KIT-ROL-MR-4010
+1x → 6LL50377000 → ROL-KIT-KD-1073
+1x → 6LK49015000 → OD-FC505
+1x → 6LJ70575000 → TBU-KIT-FC50
+1x → 6LJ58192000 → CR-FC30TR2
+
+───────────────────────────────────────────────────────────────
+End of Report
+───────────────────────────────────────────────────────────────
