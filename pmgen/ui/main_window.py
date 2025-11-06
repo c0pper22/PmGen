@@ -852,13 +852,13 @@ class BulkRunner(QObject):
                     else:
                         for pn, qty in flat.items():
                             unit = kit_by_pn.get(pn, "UNKNOWN-UNIT")
-                            lines.append(f"  • {unit} → {pn} ×{int(qty)}")
+                            lines.append(f"  • {int(qty)}x → {pn} → {unit}")
                             total_upn[(unit, pn)] = total_upn.get((unit, pn), 0) + int(qty)
                         lines.append("")
                 else:
                     for unit, pnmap in grouped.items():
                         for pn, qty in (pnmap or {}).items():
-                            lines.append(f"  • {unit} → {pn} ×{int(qty)}")
+                            lines.append(f"  • {int(qty)}x → {pn} → {unit}")
                             total_upn[(unit, pn)] = total_upn.get((unit, pn), 0) + int(qty)
                     lines.append("")
 
@@ -866,7 +866,7 @@ class BulkRunner(QObject):
             lines.append("───────────────────────────────────────────────────────────────")
             if total_upn:
                 for (unit, pn) in sorted(total_upn.keys(), key=lambda k: (k[0], k[1])):
-                    lines.append(f"  • {unit} → {pn} ×{int(total_upn[(unit, pn)])}")
+                    lines.append(f"  • {int(total_upn[(unit, pn)])}x".ljust(8) + f"→ {pn} → {unit}")
             else:
                 lines.append("  (none)")
             lines.append("")
