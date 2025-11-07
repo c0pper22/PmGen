@@ -55,33 +55,33 @@ pmgen/
 
 ```mermaid
 flowchart TD
-    A["PM_Report (txt or csv)"] --> B["parse_pm_report"]
-    B --> C["PmReport: headers, counters, items (PmItem)"]
+A["PM_Report (txt or csv)"] --> B["parse_pm_report"]
+B --> C["PmReport: headers, counters, items (PmItem)"]
 
-    C --> D["run_rules"]
-    D --> D1["build_context(report, model, counters, items_by_canon, threshold, life_basis)"]
-    D1 --> R1["GenericLifeRule: compute life_used, mark due if >= threshold"]
-    D1 --> R2["KitLinkRule: model -> catalog (part_kit_catalog), canon -> kit_code"]
-    D1 --> R3["QtyOverrideRule (optional): force quantities via overrides table"]
+C --> D["run_rules"]
+D --> D1["build_context(report, model, counters, items_by_canon, threshold, life_basis)"]
+D1 --> R1["GenericLifeRule: compute life_used, mark due if >= threshold"]
+D1 --> R2["KitLinkRule: model -> catalog (part_kit_catalog), canon -> kit_code"]
+D1 --> R3["QtyOverrideRule (optional): force quantities via overrides table"]
 
-    R1 --> M["merge & dedupe findings per canon (keep best life_used/conf)"]
-    R2 --> M
-    R3 --> M
+R1 --> M["merge & dedupe findings per canon (keep best life_used/conf)"]
+R2 --> M
+R3 --> M
 
-    M --> U["unit semantics (_unit_bucket_key): per-color drums, per-tray CST, else once"]
-    U --> S["selection_codes {kit_code: unit_qty}"]
-    M --> W["watch / not_due / all (metadata)"]
+M --> U["unit semantics (_unit_bucket_key): per-color drums, per-tray CST, else once"]
+U --> S["selection_codes {kit_code: unit_qty}"]
+M --> W["watch / not_due / all (metadata)"]
 
-    S --> X["Selection (items = due findings, meta includes selection codes)"]
+S --> X["Selection (items = due findings, meta includes selection codes)"]
 
-    X --> P["resolve_to_pn / resolve_with_rows"]
-    P --> DB["RIBON.accdb: query_parts_rows (latest rows)"]
-    P --> PN1["selection_pn {PN: qty}"]
-    P --> PN2["selection_pn_grouped {kit: {PN: qty}}"]
+X --> P["resolve_to_pn / resolve_with_rows"]
+P --> DB["RIBON.accdb: query_parts_rows (latest rows)"]
+P --> PN1["selection_pn {PN: qty}"]
+P --> PN2["selection_pn_grouped {kit: {PN: qty}}"]
 
-    PN1 --> FMT["single_report.format_report"]
-    PN2 --> FMT
-    FMT --> OUT["Human-Readable PM Report"]
+PN1 --> FMT["single_report.format_report"]
+PN2 --> FMT
+FMT --> OUT["Human-Readable PM Report"]
 
 ---
 
