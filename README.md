@@ -188,11 +188,27 @@ pip install -r requirements.txt
 python -m pmgen.ui.app
 ```
 
+### Compiling
+
+- **Build + install + Start Menu shortcut**
+```bash
+python .\build_and_install.py --clean
+```
+
+- **Add a Desktop shortcut too**
+```bash
+python .\build_and_install.py --clean --desktop-shortcut
+```
+- **Uninstall**
+```bash
+python .\build_and_install.py --uninstall
+```
+
 ### First Run
 
 1. On startup, enter your Toshiba e-Service credentials.
 2. Enable “Stay Logged In” to persist credentials in your OS keyring.
-3. Choose “Generate” and enter a serial number (e.g., **CNAM66582**).
+3. Choose “Generate” and enter a serial number.
 4. The output panel displays a colorized report:
 
    - **Most-Due Items**
@@ -207,7 +223,7 @@ python -m pmgen.ui.app
    - Top N results
    - Thread pool size
    - Output folder
-   - Blacklist patterns (`*CNGM*`, `S8GN*`, etc.)
+   - Blacklist patterns (`*CNGM*`, `S8GN?3241`, etc.)
    - Optional “Unpacking date filter”
 
 3. Choose **Bulk ▾ → Run Bulk…**
