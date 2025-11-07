@@ -53,35 +53,114 @@ pmgen/
 
 **Flow diagram**
 
-```mermaid
-flowchart TD
-A["PM_Report (txt or csv)"] --> B["parse_pm_report"]
-B --> C["PmReport: headers, counters, items (PmItem)"]
+```
 
-C --> D["run_rules"]
-D --> D1["build_context(report, model, counters, items_by_canon, threshold, life_basis)"]
-D1 --> R1["GenericLifeRule: compute life_used, mark due if >= threshold"]
-D1 --> R2["KitLinkRule: model -> catalog (part_kit_catalog), canon -> kit_code"]
-D1 --> R3["QtyOverrideRule (optional): force quantities via overrides table"]
+┌────────────────────────────────────────────┐
+│            PM_Report (.txt / .csv)         │
+└────────────────────────────────────────────┘
+                     │
+                     ▼
+        ┌─────────────────────────────┐
+        │  parse_pm_report            │
+        │  → produces PmReport        │
+        └─────────────────────────────┘
+                     │
+                     ▼
+┌──────────────────────────────────────────────────────────────┐
+│                        PmReport                              │
+│--------------------------------------------------------------│
+│ headers: {model, serial, date, fin, ...}                     │
+│ counters: {color, black, df, total}                          │
+│ items: List[PmItem]                                          │
+│   ├─ descriptor → canon (via canon_utils)                    │
+│   ├─ page_current / page_expected                            │
+│   └─ drive_current / drive_expected                          │
+└──────────────────────────────────────────────────────────────┘
+                     │
+                     ▼
+        ┌─────────────────────────────┐
+        │  run_rules (engine stage)   │
+        └─────────────────────────────┘
+                     │
+                     ▼
+        ┌─────────────────────────────┐
+        │  build_context()            │
+        │  → Context(                 │
+        │      report, model,         │
+        │      counters,              │
+        │      items_by_canon,        │
+        │      threshold, life_basis) │
+        └─────────────────────────────┘
+                     │
+                     ▼
+┌──────────────────────────────────────────────────────────────┐
+│                    Rule Engine Pipeline                      │
+│--------------------------------------------------------------│
+│  1. GenericLifeRule                                           │
+│     • Calculates life_used (% of life).                       │
+│     • Marks items DUE if ≥ threshold.                         │
+│                                                              │
+│  2. KitLinkRule                                               │
+│     • Looks up canon → kit_code via part_kit_catalog.         │
+│     • Resolves model’s catalog registry.                      │
+│                                                              │
+│  3. QtyOverrideRule (optional)                                │
+│     • Overrides quantities (e.g., FILTER-OZN-KCH-A08K ×2).    │
+│                                                              │
+│  → All rules produce Finding objects                          │
+│    merged & deduplicated by canon.                            │
+└──────────────────────────────────────────────────────────────┘
+                     │
+                     ▼
+        ┌─────────────────────────────┐
+        │  _unit_bucket_key() logic   │
+        │  • per-color kits counted   │
+        │  • per-tray CST rollers     │
+        │  • others aggregated once   │
+        └─────────────────────────────┘
+                     │
+                     ▼
+        ┌─────────────────────────────┐
+        │  Selection                  │
+        │  → selection_codes: {kit→qty}│
+        │  → watch / not_due / all     │
+        │  → meta (threshold, etc.)    │
+        └─────────────────────────────┘
+                     │
+                     ▼
+┌──────────────────────────────────────────────────────────────┐
+│        resolve_to_pn / resolve_with_rows                     │
+│--------------------------------------------------------------│
+│  • Queries RIBON.accdb via pyodbc                            │
+│  • query_parts_rows({kit_codes})                             │
+│  • expand_to_part_numbers({kit→qty}, rows)                   │
+│                                                              │
+│  Outputs:                                                    │
+│   - selection_pn: {PARTS_NO → qty}                           │
+│   - selection_pn_grouped: {kit → {PARTS_NO → qty}}           │
+│   - ribon_rows (raw DB data)                                 │
+└──────────────────────────────────────────────────────────────┘
+                     │
+                     ▼
+        ┌─────────────────────────────┐
+        │ single_report.format_report │
+        │  → generates final text     │
+        │    with due items, kits,    │
+        │    part numbers, counters,  │
+        │    and thresholds.          │
+        └─────────────────────────────┘
+                     │
+                     ▼
+┌────────────────────────────────────────────┐
+│          Human-Readable PM Report          │
+│--------------------------------------------│
+│ “Most-Due Items” list                      │
+│ “Final Parts” (Qty → PN → Kit)             │
+│ Counters / Threshold summary               │
+└────────────────────────────────────────────┘
 
-R1 --> M["merge & dedupe findings per canon (keep best life_used/conf)"]
-R2 --> M
-R3 --> M
 
-M --> U["unit semantics (_unit_bucket_key): per-color drums, per-tray CST, else once"]
-U --> S["selection_codes {kit_code: unit_qty}"]
-M --> W["watch / not_due / all (metadata)"]
-
-S --> X["Selection (items = due findings, meta includes selection codes)"]
-
-X --> P["resolve_to_pn / resolve_with_rows"]
-P --> DB["RIBON.accdb: query_parts_rows (latest rows)"]
-P --> PN1["selection_pn {PN: qty}"]
-P --> PN2["selection_pn_grouped {kit: {PN: qty}}"]
-
-PN1 --> FMT["single_report.format_report"]
-PN2 --> FMT
-FMT --> OUT["Human-Readable PM Report"]
+```
 
 ---
 
