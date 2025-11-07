@@ -556,6 +556,21 @@ ROL_KIT_KD_1073 = ROL_KIT_KD_1073
 KIT_ROL_MR_4010 = KIT_ROL_MR_4010
 FILTER_OZN_KCH_A08K_X2 = FILTER_OZN_KCH_A08K_X2
 
+# 6529A / 7529A / 9029A
+
+EPU_KIT_FC556_G_K = EPU_KIT_FC556_G_K
+EPU_KIT_FC556_S = EPU_KIT_FC556_S
+FR_KIT_FC556_FU = FR_KIT_FC556_FU
+TBU_KIT_FC556 = TBU_KIT_FC556
+FLTR_KIT_DP55 = FLTR_KIT_DP55
+ROL_KIT_FC75 = ROL_KIT_FC75
+ROL_KIT_FC75_U = ROL_KIT_FC75_U
+KIT_ROL_MR_4010 = KIT_ROL_MR_4010
+OD_FC556 = OD_FC556
+CR_FC556TR2 = CR_FC556TR2
+ASYS_ROLL_FEED_H373 = ASYS_ROLL_FEED_H373
+K_ROLL_PICK_BYP = K_ROLL_PICK_BYP
+
 # Catalogs
 
 _330AC_400AC_clog = Catalog(
@@ -896,6 +911,38 @@ _5528A_6528A_clog = Catalog(
     ]
 )
 
+_6529A_7529A_clog = Catalog(
+    [
+        EPU_KIT_FC556_G_K,
+        FR_KIT_FC556_FU,
+        TBU_KIT_FC556,
+        FLTR_KIT_DP55,
+        ROL_KIT_FC75,
+        ROL_KIT_FC75_U,
+        KIT_ROL_MR_4010,
+        OD_FC556,
+        CR_FC556TR2,
+        ASYS_ROLL_FEED_H373,
+        K_ROLL_PICK_BYP,
+    ]
+)
+
+_9029A_clog = Catalog(
+    [
+        EPU_KIT_FC556_S,
+        FR_KIT_FC556_FU,
+        TBU_KIT_FC556,
+        FLTR_KIT_DP55,
+        ROL_KIT_FC75,
+        ROL_KIT_FC75_U,
+        KIT_ROL_MR_4010,
+        OD_FC556,
+        CR_FC556TR2,
+        ASYS_ROLL_FEED_H373,
+        K_ROLL_PICK_BYP,
+    ]
+)
+
 # All Supported Models
 _330AC = Model(_330AC_400AC_clog)
 _400AC = Model(_330AC_400AC_clog)
@@ -951,9 +998,9 @@ _4528A = Model(_3528A_4528A_clog)
 _5528A = Model(_5528A_6528A_clog)
 _6528A = Model(_5528A_6528A_clog)
 
-# _6529A = Model()
-# _7529A = Model()
-# _9029A = Model()
+_6529A = Model(_6529A_7529A_clog)
+_7529A = Model(_6529A_7529A_clog)
+_9029A = Model(_9029A_clog)
 
 REGISTRY = {
     "330AC": _330AC,
@@ -1010,9 +1057,9 @@ REGISTRY = {
     "5528A": _5528A,
     "6528A": _6528A,
 
-#     "6529A": _6529A,
-#     "7529A": _7529A,
-#     "9029A": _9029A,
+    "6529A": _6529A,
+    "7529A": _7529A,
+    "9029A": _9029A,
 }
 
 
