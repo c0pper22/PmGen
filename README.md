@@ -55,73 +55,33 @@ pmgen/
 
 ```mermaid
 flowchart TD
-    %% -------------------------------
-    %% Input
-    %% -------------------------------
-    A[PM_Report (.txt / .csv)]:::io --> B[[parse_pm_report]]:::process
-    B -->|headers, counters, items| C[PmReport]:::data
+    A["PM_Report (txt or csv)"] --> B["parse_pm_report"]
+    B --> C["PmReport: headers, counters, items (PmItem)"]
 
-    %% PmReport anatomy
-    subgraph S1[PmReport structure]
-        direction TB
-        C --> C1{{headers\n- model\n- serial\n- date\n- fin}}:::data
-        C --> C2{{counters\n- color / black / df / total}}:::data
-        C --> C3{{items: List<PmItem>\n- descriptor -> canon\n- page/drive current, expected}}:::data
-    end
+    C --> D["run_rules"]
+    D --> D1["build_context(report, model, counters, items_by_canon, threshold, life_basis)"]
+    D1 --> R1["GenericLifeRule: compute life_used, mark due if >= threshold"]
+    D1 --> R2["KitLinkRule: model -> catalog (part_kit_catalog), canon -> kit_code"]
+    D1 --> R3["QtyOverrideRule (optional): force quantities via overrides table"]
 
-    %% -------------------------------
-    %% Rule Engine
-    %% -------------------------------
-    C --> D[[run_rules]]:::process
-    D --> D1[[build_context()]]:::process
-    D1 -->|Context(report, model, counters,\nitems_by_canon, threshold, life_basis)| E((Context)):::data
+    R1 --> M["merge & dedupe findings per canon (keep best life_used/conf)"]
+    R2 --> M
+    R3 --> M
 
-    subgraph RULES[Rule Engine Pipeline]
-        direction TB
-        E --> R1[[GenericLifeRule]]:::rule
-        E --> R2[[KitLinkRule]]:::rule
-        E --> R3[[QtyOverrideRule (optional)]]:::rule
+    M --> U["unit semantics (_unit_bucket_key): per-color drums, per-tray CST, else once"]
+    U --> S["selection_codes {kit_code: unit_qty}"]
+    M --> W["watch / not_due / all (metadata)"]
 
-        R1 -->|compute life_used\n(page/drive per item)\nmark due if >= threshold| F1[Findings (per canon)]:::data
-        R2 -->|model->catalog (part_kit_catalog)\ncanon->kit mapping| F2[Findings with kit_code]:::data
-        R3 -->|QTY_OVERRIDES table\n(e.g., FILTER-OZN-KCH-A08K -> 2)| F3[Adjusted findings]:::data
-    end
+    S --> X["Selection (items = due findings, meta includes selection codes)"]
 
-    F1 --> G[[dedupe by canon\n(best life_used, conf)]]:::process
-    F2 --> G
-    F3 --> G
+    X --> P["resolve_to_pn / resolve_with_rows"]
+    P --> DB["RIBON.accdb: query_parts_rows (latest rows)"]
+    P --> PN1["selection_pn {PN: qty}"]
+    P --> PN2["selection_pn_grouped {kit: {PN: qty}}"]
 
-    G --> H[[unit semantics]]:::process
-    H -->|_unit_bucket_key()\n- per-color kits (declared)\n- drums (per color)\n- CST (per tray)\n- else once| I{{selection_codes\n{kit_code: unit_qty}}}:::data
-
-    G --> M{{watch / not_due / all}}:::data
-
-    I --> J[Selection]:::data
-    M --> J
-
-    %% -------------------------------
-    %% Kit -> PN Resolution (RIBON)
-    %% -------------------------------
-    J -->|{kit_code: qty}| K[[resolve_to_pn / resolve_with_rows]]:::process
-    K -->|query_parts_rows()| L[(RIBON.accdb)]:::io
-    L -->|rows (latest by creation/update)| K2[[expand_to_part_numbers]]:::process
-    K2 --> N{{selection_pn (flat)\n{PN: qty}}}:::data
-    K2 --> O{{selection_pn_grouped\n{kit: {PN: qty}}}}:::data
-    N --> J
-    O --> J
-
-    %% -------------------------------
-    %% Formatting / Output
-    %% -------------------------------
-    J --> P[[single_report.format_report]]:::process
-    P --> Q[Human-Readable PM Report]:::out
-
-    %% Styles
-    classDef process fill:#2b2b2b,stroke:#8a8a8a,color:#f5f5f5,stroke-width:1px;
-    classDef rule fill:#27343b,stroke:#8fbcd4,color:#eaf6ff,stroke-width:1px;
-    classDef data fill:#3a3a3a,stroke:#6b6b6b,color:#ffffff,stroke-width:1px;
-    classDef io fill:#183a66,stroke:#5ca0d3,color:#ffffff,stroke-width:1px;
-    classDef out fill:#1f5132,stroke:#7bd19a,color:#eafff3,stroke-width:1px;
+    PN1 --> FMT["single_report.format_report"]
+    PN2 --> FMT
+    FMT --> OUT["Human-Readable PM Report"]
 
 ---
 
