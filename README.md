@@ -93,23 +93,23 @@ pmgen/
         └─────────────────────────────┘
                      │
                      ▼
-┌──────────────────────────────────────────────────────────────┐
-│                    Rule Engine Pipeline                      │
-│--------------------------------------------------------------│
+┌───────────────────────────────────────────────────────────────┐
+│                    Rule Engine Pipeline                       │
+│---------------------------------------------------------------│
 │  1. GenericLifeRule                                           │
 │     • Calculates life_used (% of life).                       │
 │     • Marks items DUE if ≥ threshold.                         │
-│                                                              │
+│                                                               │
 │  2. KitLinkRule                                               │
 │     • Looks up canon → kit_code via part_kit_catalog.         │
 │     • Resolves model’s catalog registry.                      │
-│                                                              │
-│  3. QtyOverrideRule (optional)                                │
+│                                                               │
+│  3. QtyOverrideRule (optional & does not BaseRule)            │
 │     • Overrides quantities (e.g., FILTER-OZN-KCH-A08K ×2).    │
-│                                                              │
+│                                                               │
 │  → All rules produce Finding objects                          │
 │    merged & deduplicated by canon.                            │
-└──────────────────────────────────────────────────────────────┘
+└───────────────────────────────────────────────────────────────┘
                      │
                      ▼
         ┌─────────────────────────────┐
@@ -120,12 +120,12 @@ pmgen/
         └─────────────────────────────┘
                      │
                      ▼
-        ┌─────────────────────────────┐
-        │  Selection                  │
+        ┌──────────────────────────────┐
+        │  Selection                   │
         │  → selection_codes: {kit→qty}│
         │  → watch / not_due / all     │
         │  → meta (threshold, etc.)    │
-        └─────────────────────────────┘
+        └──────────────────────────────┘
                      │
                      ▼
 ┌──────────────────────────────────────────────────────────────┐
