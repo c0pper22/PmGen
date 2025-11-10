@@ -55,9 +55,9 @@ pmgen/
 
 ```
 
-┌────────────────────────────────────────────┐
-│            PM_Report (.txt / .csv)         │
-└────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────┐
+│ PM_Report (.txt / .csv) Fetched from ECC (E-Bridge Cloud Connect) │
+└───────────────────────────────────────────────────────────────────┘
                      │
                      ▼
         ┌─────────────────────────────┐
@@ -417,19 +417,6 @@ Run stand-alone tests:
 python -m pmgen.catalog.canon_utils
 ```
 
----
-
-## 🧵 Session & Networking
-
-- `http_client.py` provides `SessionPool` for thread-safe reuse.
-- `get_serials_after_login()` → fetches all active serial numbers.
-- `get_service_file_bytes(serial, "PMSupport")` → downloads the PM report.
-- `get_unpacking_date()` → returns `date` of initial device unpacking.
-
-All HTTP calls are `requests.Session` based with shared cookies.
-
----
-
 ## 📊 Output Example
 
 ```
@@ -630,12 +617,12 @@ End of Report
 
 ## 🧩 Extending the System
 
-| Goal                 | How                                                |
-| -------------------- | -------------------------------------------------- |
-| Add new model        | Define its `Catalog([...])` and add to `REGISTRY`. |
-| Add new rule         | Drop `rules/my_rule.py` → extend `run_rules.py`.   |
-| Add new part mapping | Update `canon_utils.CANON_MAP`.                    |
-| Adjust qty override  | Edit `qty_override.py → QTY_OVERRIDES`.            |
+| Goal                 | How                                                                         |
+| -------------------- | ----------------------------------------------------------------------------|
+| Add new model        | Define any new `PmUnit`. Define its `Catalog([...])` and add to `REGISTRY`. |
+| Add new rule         | Drop `rules/my_rule.py` → extend `run_rules.py`.                            |
+| Add new part mapping | Update `canon_utils.CANON_MAP`.                                             |
+| Adjust qty override  | Add PmUnits to `qty_override.py → QTY_OVERRIDES`.                   |
 
 ---
 
