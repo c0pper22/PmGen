@@ -18,6 +18,14 @@ from PyQt6.QtWidgets import (
     QToolBar, QSizePolicy, QToolButton, QHBoxLayout, QLabel, QMenu,
     QDialog, QPushButton, QFrame, QLineEdit, QComboBox, QCheckBox, QSlider, QSpinBox, QDoubleSpinBox
 )
+from reportlab.lib.pagesizes import LETTER
+from reportlab.lib import colors
+from reportlab.lib.units import inch
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+)
+from reportlab.pdfbase.pdfmetrics import stringWidth
 
 import requests
 from collections import deque
@@ -26,7 +34,7 @@ from collections import deque
 # Static theme
 # ─────────────────────────────────────────────────────────────────────────────
 THEME = "dark"  # set to "light" for the light theme
-VERSION = "2.2.1"
+VERSION = "2.2.2"
 
 GLOBAL_STYLE_LIGHT = """
 #TopBarBg { background-color: #f4f4f6; }
@@ -737,7 +745,7 @@ class BulkRunner(QObject):
             from pmgen.io.http_client import SessionPool, get_serials_after_login, get_service_file_bytes
             from pmgen.parsing.parse_pm_report import parse_pm_report
             from pmgen.engine.run_rules import run_rules
-            from pmgen.engine.single_report import format_report
+            from pmgen.engine.single_report import create_pdf_report
 
             os.makedirs(self.cfg.out_dir, exist_ok=True)
 
@@ -752,7 +760,7 @@ class BulkRunner(QObject):
             serials1 = [s for s in serials0 if not self._is_blacklisted(s)]
             skipped = len(serials0) - len(serials1)
             if skipped:
-                self.progress.emit(f"[Bulk] Skipped {skipped} serial(s) via blacklist.")
+                self.progress.emit(f"[Info] Skipped {skipped} serial(s) via blacklist.")
             if not serials1:
                 raise RuntimeError("No serials to process after applying blacklist.")
 
@@ -777,12 +785,13 @@ class BulkRunner(QObject):
                     all_items = (getattr(selection, "meta", {}) or {}).get("all", []) or getattr(selection, "all_items", []) or []
                     best_used = max([getattr(f, "life_used", 0.0) or 0.0 for f in all_items], default=0.0)
 
-                    text = format_report(
+                    create_pdf_report(
                         report=report,
                         selection=selection,
                         threshold=thr,
                         life_basis=basis,
-                        show_all=show_all
+                        show_all=show_all,
+                        out_dir=self.cfg.out_dir
                     )
 
                     meta = getattr(selection, "meta", {}) or {}
@@ -794,7 +803,7 @@ class BulkRunner(QObject):
                         "serial": (report.headers or {}).get("serial") or serial,
                         "model":  (report.headers or {}).get("model")  or "Unknown",
                         "best_used": float(best_used),
-                        "text": text,
+                        "text": "None", # this is old unused
                         "grouped": grouped,
                         "flat": flat,
                         "kit_by_pn": kit_by_pn
@@ -823,62 +832,72 @@ class BulkRunner(QObject):
             ok.sort(key=lambda r: r["best_used"], reverse=True)
             top = ok[: self.cfg.top_n]
 
-            for r in top:
-                pct = self._fmt_pct(r["best_used"]).replace("%", "")
-                fname = f"{pct}_{r['serial']}.txt"
-                path = os.path.join(self.cfg.out_dir, fname)
-                with open(path, "w", encoding="utf-8") as f:
-                    f.write(r["text"])
+            # for r in top:
+            #     pct = self._fmt_pct(r["best_used"]).replace("%", "")
+            #     fname = f"{pct}_{r['serial']}.txt"
+            #     path = os.path.join(self.cfg.out_dir, fname)
+            #     with open(path, "w", encoding="utf-8") as f:
+            #         f.write(r["text"])
             self.progress.emit(f"[Info] Wrote {len(top)} report files to: {self.cfg.out_dir}")
 
-            lines = []
-            lines.append("Bulk Final Summary")
-            lines.append("───────────────────────────────────────────────────────────────")
-            lines.append(f"Threshold: {thr:.2f} • Basis: {basis.upper()}")
-            lines.append(f"Selected top {len(top)} of {len(ok)} successful (from {len(results)} attempts).")
-            lines.append("")
+            # lines = []
+            # lines.append("Bulk Final Summary")
+            # lines.append("───────────────────────────────────────────────────────────────")
+            # lines.append(f"Threshold: {thr:.2f} • Basis: {basis.upper()}")
+            # lines.append(f"Selected top {len(top)} of {len(ok)} successful (from {len(results)} attempts).")
+            # lines.append("")
 
-            total_upn = {}
-            for r in top:
-                lines.append(f"{r['serial']}  —  best used {self._fmt_pct(r['best_used'])}  —  {r['model']}")
-                grouped = r.get("grouped") or {}
+            # total_upn = {}
+            # for r in top:
+            #     lines.append(f"{r['serial']}  —  best used {self._fmt_pct(r['best_used'])}  —  {r['model']}")
+            #     grouped = r.get("grouped") or {}
 
-                if not grouped:
-                    flat = r.get("flat") or {}
-                    kit_by_pn = r.get("kit_by_pn") or {}
-                    if not flat:
-                        lines.append("  (no final parts)")
-                        lines.append("")
-                    else:
-                        for pn, qty in flat.items():
-                            unit = kit_by_pn.get(pn, "UNKNOWN-UNIT")
-                            lines.append(f"  • {int(qty)}x → {pn} → {unit}")
-                            total_upn[(unit, pn)] = total_upn.get((unit, pn), 0) + int(qty)
-                        lines.append("")
-                else:
-                    for unit, pnmap in grouped.items():
-                        for pn, qty in (pnmap or {}).items():
-                            lines.append(f"  • {int(qty)}x → {pn} → {unit}")
-                            total_upn[(unit, pn)] = total_upn.get((unit, pn), 0) + int(qty)
-                    lines.append("")
+            #     if not grouped:
+            #         flat = r.get("flat") or {}
+            #         kit_by_pn = r.get("kit_by_pn") or {}
+            #         if not flat:
+            #             lines.append("  (no final parts)")
+            #             lines.append("")
+            #         else:
+            #             for pn, qty in flat.items():
+            #                 unit = kit_by_pn.get(pn, "UNKNOWN-UNIT")
+            #                 lines.append(f"  • {int(qty)}x → {pn} → {unit}")
+            #                 total_upn[(unit, pn)] = total_upn.get((unit, pn), 0) + int(qty)
+            #             lines.append("")
+            #     else:
+            #         for unit, pnmap in grouped.items():
+            #             for pn, qty in (pnmap or {}).items():
+            #                 lines.append(f"  • {int(qty)}x → {pn} → {unit}")
+            #                 total_upn[(unit, pn)] = total_upn.get((unit, pn), 0) + int(qty)
+            #         lines.append("")
 
-            lines.append("All Serials — Consolidated Parts")
-            lines.append("───────────────────────────────────────────────────────────────")
-            if total_upn:
-                for (unit, pn) in sorted(total_upn.keys(), key=lambda k: (k[0], k[1])):
-                    lines.append(f"  • {int(total_upn[(unit, pn)])}x".ljust(8) + f"→ {pn} → {unit}")
-            else:
-                lines.append("  (none)")
-            lines.append("")
+            # lines.append("All Serials — Consolidated Parts")
+            # lines.append("───────────────────────────────────────────────────────────────")
+            # if total_upn:
+            #     for (unit, pn) in sorted(total_upn.keys(), key=lambda k: (k[0], k[1])):
+            #         lines.append(f"  • {int(total_upn[(unit, pn)])}x".ljust(8) + f"→ {pn} → {unit}")
+            # else:
+            #     lines.append("  (none)")
+            # lines.append("")
 
-            sum_path = os.path.join(self.cfg.out_dir, "Final_Summary.txt")
-            with open(sum_path, "w", encoding="utf-8") as f:
-                f.write("\n".join(lines))
+            #sum_path = os.path.join(self.cfg.out_dir, "Final_Summary")
+            # with open(sum_path, "w", encoding="utf-8") as f:
+            #     f.write("\n".join(lines))
+            from pmgen.engine.final_report import write_final_summary_pdf
+
+            pdf_path = write_final_summary_pdf(
+                out_dir=self.cfg.out_dir,
+                results=results,
+                top=top,
+                thr=thr,
+                basis=basis,
+                filename="Final_Summary.pdf",
+            )
 
             pool.close()
-            self.finished.emit(f"[Info] Complete. Summary written to: {sum_path}")
+            self.finished.emit(f"[Info] Complete. Summary written to: {pdf_path}")
         except Exception as e:
-            self.finished.emit(f"[Bulk] Failed: {e}")
+            self.finished.emit(f"[Info] Failed: {e}")
 
 class MainWindow(QMainWindow):
     # ---- PM settings ----

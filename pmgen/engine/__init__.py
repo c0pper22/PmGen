@@ -1,1 +1,2 @@
 from .single_report import generate_from_bytes
+from .final_report import write_final_summary_pdf

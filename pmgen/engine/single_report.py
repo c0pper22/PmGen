@@ -7,40 +7,49 @@ from pmgen.types import PmReport
 from pmgen.engine.run_rules import run_rules
 from pmgen.parsing.parse_pm_report import parse_pm_report
 from datetime import datetime
+from reportlab.lib.pagesizes import LETTER
+from reportlab.lib import colors
+from reportlab.lib.units import inch
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+)
+from reportlab.platypus.flowables import KeepTogether, HRFlowable
+from datetime import datetime
+import os
 
-def _coerce_items(items: Iterable[Any]) -> list[PmItemType]:
-    out: list[PmItemType] = []
-    for it in (items or []):
-        if hasattr(it, "page_life") and hasattr(it, "drive_life"):
-            out.append(it)  # already our dataclass
-            continue
-        try:
-            get = (lambda k: getattr(it, k) if hasattr(it, k) else (it.get(k) if isinstance(it, dict) else None))
-            out.append(PmItemType(
-                descriptor=get("descriptor") or get("name") or "",
-                page_current=get("page_current"),
-                page_expected=get("page_expected"),
-                drive_current=get("drive_current"),
-                drive_expected=get("drive_expected"),
-                canon=get("canon") or None,
-            ))
-        except Exception:
-            continue
+def _collect_all_findings(selection, show_all: bool):
+    due = list(getattr(selection, "items", []) or [])
+    if not show_all:
+        return due
+
+    meta = getattr(selection, "meta", {}) or {}
+    pools = [
+        getattr(selection, "not_due", None),
+        getattr(selection, "all_items", None),
+        meta.get("all"),
+        meta.get("all_items"),
+        meta.get("watch"),
+    ]
+
+    extra = []
+    for p in pools:
+        if p:
+            extra.extend(p)
+
+    def _key(f):
+        return (getattr(f, "canon", None), getattr(f, "kit_code", None))
+
+    seen = {_key(f) for f in due}
+    out = list(due)
+    for f in extra:
+        k = _key(f)
+        if k not in seen:
+            out.append(f)
+            seen.add(k)
+
+    out.sort(key=lambda x: (getattr(x, "life_used", 0.0), getattr(x, "conf", 0.0)), reverse=True)
     return out
-
-def _life_used(item: PmItemType, basis: str) -> Optional[float]:
-    p = getattr(item, 'page_life', None)
-    d = getattr(item, 'drive_life', None)
-    if basis == 'page':
-        return p if isinstance(p, (int, float)) else (d if isinstance(d, (int, float)) else None)
-    if basis == 'drive':
-        return d if isinstance(d, (int, float)) else (p if isinstance(p, (int, float)) else None)
-    return p if isinstance(p, (int, float)) else (d if isinstance(d, (int, float)) else None)
-
-def _fmt_pct(p: Optional[float]) -> str:
-    if p is None:
-        return "—"
-    return f"{(float(p) * 100):.1f}%"
 
 def format_report(
     *,
@@ -126,7 +135,7 @@ def format_report(
     # Build the rows (sorted by life_used then conf)
     most_due_rows = []
     if show_all:
-        combined = list(due_items) + list(not_due_items)
+        combined = _collect_all_findings(selection, show_all)
         combined.sort(key=lambda x: (getattr(x, "life_used", 0.0), getattr(x, "conf", 0.0)), reverse=True)
         for f in combined:
             canon = getattr(f, "canon", "—")
@@ -210,6 +219,168 @@ def format_report(
 
     return "\n".join(lines)
 
+def _pct_color(v) -> colors.Color:
+    if v < 84.0:
+        return colors.darkgray
+    
+    if v < 100.0:
+        return colors.orange
+    
+    if v >= 100:
+        return colors.red
+
+def _hline(thickness=1, color=colors.HexColor("#DDDDDD")):
+    return HRFlowable(width="100%", thickness=thickness, color=color, spaceBefore=4, spaceAfter=6)
+
+def _tbl_style_base():
+    return TableStyle(
+        [
+            ("FONT", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, 0), 10),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#3B82F6")),
+            ("FONT", (0, 1), (-1, -1), "Helvetica"),
+            ("FONTSIZE", (0, 1), (-1, -1), 9),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#E5E7EB")),
+            ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
+        ]
+    )
+
+def _zebra(tbl, rows):
+    for r in range(1, rows):
+        if r % 2 == 0:
+            tbl.setStyle(TableStyle([("BACKGROUND", (0, r), (-1, r), colors.HexColor("#F8FAFC"))]))
+
+def create_pdf_report(
+    *,
+    report,
+    selection,
+    threshold: float,
+    life_basis: str,
+    show_all: bool = False,
+    out_dir: str = ".",
+):
+    """
+    Renders a single parsed PM report into a colorized PDF.
+    (Same interface as your original format_report)
+    """
+    hdrs = getattr(report, "headers", {}) or {}
+    model = hdrs.get("model", "Unknown")
+    serial = hdrs.get("serial", "Unknown")
+    dt_raw = hdrs.get("date")
+    dt_str = dt_raw if isinstance(dt_raw, str) and dt_raw.strip() else datetime.now().strftime("%m-%d-%Y %H:%M")
+
+    # Counters
+    c = getattr(report, "counters", {}) or {}
+    parts = [f"{k.title()}: {v}" for k, v in c.items() if v is not None]
+
+    # Due items
+    due_items = list(getattr(selection, "items", []) or [])
+    not_due_items = []
+    if show_all:
+        if hasattr(selection, "not_due") and selection.not_due:
+            not_due_items = list(selection.not_due)
+        else:
+            meta = getattr(selection, "meta", {}) or {}
+            all_items = meta.get("all", []) or []
+            not_due_items = [f for f in all_items if not getattr(f, "due", False)]
+
+    combined = due_items + not_due_items if show_all else due_items
+    combined.sort(key=lambda x: getattr(x, "life_used", 0.0), reverse=True)
+
+    most_due = []
+    for f in combined:
+        canon = getattr(f, "canon", "—")
+        pct = getattr(f, "life_used", 0.0) * 100
+        kit = getattr(f, "kit_code", None) or "(N/A)"
+        most_due.append([canon, f"{pct:.1f}%", "DUE" if getattr(f, "due", False) else "", kit])
+
+    # Final parts
+    meta = getattr(selection, "meta", {}) or {}
+    grouped = meta.get("selection_pn_grouped", {}) or {}
+    flat = meta.get("selection_pn", {}) or {}
+    by_pn = meta.get("kit_by_pn", {}) or {}
+
+    final_parts = []
+    if grouped:
+        for unit, pns in grouped.items():
+            for pn, qty in (pns or {}).items():
+                final_parts.append([int(qty), pn, unit])
+    elif flat:
+        for pn, qty in flat.items():
+            final_parts.append([int(qty), pn, by_pn.get(pn, "UNKNOWN-UNIT")])
+
+    # Build PDF
+    best_used = max(
+        [getattr(f, "life_used", 0.0) for f in combined],
+    )
+    best_used_pct = best_used * 100.0
+    fname = f"{best_used_pct:.1f}_{serial}.pdf"
+
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, fname)
+    doc = SimpleDocTemplate(
+        path,
+        pagesize=LETTER,
+        leftMargin=0.75 * inch,
+        rightMargin=0.75 * inch,
+        topMargin=0.75 * inch,
+        bottomMargin=0.75 * inch,
+    )
+
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(name="H1", fontName="Helvetica-Bold", fontSize=16, leading=20, textColor=colors.HexColor("#111827")))
+    styles.add(ParagraphStyle(name="Meta", fontName="Helvetica", fontSize=9, textColor=colors.HexColor("#374151")))
+    styles.add(ParagraphStyle(name="Section", fontName="Helvetica-Bold", fontSize=12, leading=14, textColor=colors.HexColor("#111827"), spaceBefore=10))
+
+    story = []
+    story.append(Paragraph(f"Model: {model}  |  Serial: {serial}  |  Date: {dt_str}", styles["H1"]))
+    story.append(_hline())
+    story.append(Paragraph(f"Due threshold: {threshold*100:.1f}%  •  Basis: {life_basis.upper()}", styles["Meta"]))
+    if parts:
+        story.append(Paragraph("Counters: " + "  ".join(parts), styles["Meta"]))
+    story.append(Spacer(1, 0.15 * inch))
+
+    # Most-Due Items
+    story.append(Paragraph("Most-Due Items", styles["Section"]))
+    story.append(_hline())
+    if most_due:
+        data = [["Canon", "Life Used", "Status", "Catalog"]] + most_due
+        tbl = Table(data, colWidths=[2.9 * inch, 1.0 * inch, 0.9 * inch, 2.1 * inch])
+        tbl.setStyle(_tbl_style_base())
+        tbl.setStyle(TableStyle([("ALIGN", (1, 1), (1, -1), "RIGHT"), ("ALIGN", (2, 1), (2, -1), "CENTER")]))
+        _zebra(tbl, len(data))
+        for r_idx in range(1, len(data)):
+            try:
+                val = float(most_due[r_idx - 1][1].strip("%"))
+                tbl.setStyle(TableStyle([("TEXTCOLOR", (1, r_idx), (1, r_idx), _pct_color(val))]))
+            except Exception:
+                pass
+        tbl.splitByRow = 1
+        tbl.repeatRows = 1
+        story.append(KeepTogether(tbl))
+    else:
+        story.append(Paragraph("(none)", styles["Meta"]))
+    story.append(Spacer(1, 0.15 * inch))
+
+    # Final Parts
+    story.append(Paragraph("Final Parts", styles["Section"]))
+    story.append(_hline())
+    if final_parts:
+        data = [["Qty", "Part Number", "Unit"]] + [[str(q), pn, u] for q, pn, u in final_parts]
+        tbl = Table(data, colWidths=[0.7 * inch, 3.0 * inch, 3.05 * inch])
+        tbl.setStyle(_tbl_style_base())
+        tbl.setStyle(TableStyle([("ALIGN", (0, 1), (0, -1), "RIGHT")]))
+        _zebra(tbl, len(data))
+        tbl.splitByRow = 1
+        tbl.repeatRows = 1
+        story.append(KeepTogether(tbl) if len(data) <= 28 else tbl)
+    else:
+        story.append(Paragraph("(no final parts)", styles["Meta"]))
+    story.append(Spacer(1, 0.15 * inch))
+
+    doc.build(story)
 
 def generate_from_bytes(pm_pdf_bytes: bytes, threshold: float, life_basis: str, show_all: bool = False) -> str:
     """
