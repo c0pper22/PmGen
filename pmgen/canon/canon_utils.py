@@ -59,7 +59,6 @@ CANON = types.SimpleNamespace(
 
     # Fuser / transfer / misc
     FUSER_ROLLER = "FUSER ROLLER",
-    RECOVERY_BLADE = "RECOVERY BLADE",
     SEPARATION_FINGER_DRUM  = "SEPARATION FINGER (DRUM)",
     SEPARATION_FINGER_FUSER = "SEPARATION FINGER (FUSER)",
     OZONE_FILTER_1 = "OZONE FILTER 1",
@@ -120,7 +119,7 @@ CANON_MAP: Dict[Pattern[str], str] = {
     re.compile(r"^YELLOW\s+DEVELOPER$", re.I):                       CANON.Y_DEVELOPER,
 
     # ─── Generic parts ─────────────────────────────────────────────
-    re.compile(r"^BELT\s+BLADE$", re.I):                             CANON.BELT_BLADE,
+    re.compile(r"^(BELT|RECOVERY)\s+BLADE$", re.I):                  CANON.BELT_BLADE,
     re.compile(r"^FUSER\s+BELT$", re.I):                             CANON.FUSER_BELT,
     re.compile(r"^PRESS\s+ROLLER$", re.I):                           CANON.PRESS_ROLLER,
     re.compile(r"^PRESS\s+ROLLER\s+FINGER$", re.I):                  CANON.PRESS_ROLLER_FINGER,
@@ -178,7 +177,6 @@ CANON_MAP: Dict[Pattern[str], str] = {
 
     # ─── Misc mono + fuser/transfer parts ───────────────────────────
     re.compile(r"^FUSER\s+ROLLER$", re.I):                           CANON.FUSER_ROLLER,
-    re.compile(r"^RECOVERY\s+BLADE$", re.I):                         CANON.RECOVERY_BLADE,
     re.compile(r"^SEPARATION\s+FINGER\(DRUM\)$", re.I):              CANON.SEPARATION_FINGER_DRUM,
     re.compile(r"^SEPARATION\s+FINGER\(FUSER\)$", re.I):             CANON.SEPARATION_FINGER_FUSER,
 
