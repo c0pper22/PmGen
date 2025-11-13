@@ -103,17 +103,17 @@ QDialog#FramelessDialogRoot { background: #1f2023; border: 1px solid #000000; bo
 #DialogSeparator { background: #000000; max-height: 1px; min-height: 1px; }
 #DialogCheckbox { background: #1f2023; }
 #DialogCheckbox::indicator { border: 1px solid #000000; width:16px; height:16px; }
-QCheckBox#DialogCheckbox::indicator:checked { background:#1f2023; border:1px solid #000000; image: url(pmgen/ui/icons/checkmark.svg); }
+QCheckBox#DialogCheckbox::indicator:checked { background:#1f2023; border:1px solid #000000; image: url(_internal/pmgen/assets/icons/checkmark.svg); }
 QCheckBox#DialogCheckbox::indicator:unchecked { image: none; }
 #DialogLabel { background: #1f2023; color: #e9e9e9; }
 #UserLabel { background: #1f2023; color: #e9e9e9; font-weight: 800 }
 #DialogInput { background: #2a2c2f; color: #e9e9e9; border: 1px solid #000000; font-weight: 800; }
 #DialogInput:focus { background: #2a2c2f; color: #e9e9e9; border-radius: 0; border: 1px solid #000000; font-weight: 800 }
 #DialogInput::up-arrow {
-    image: url(pmgen/ui/icons/up.svg);
+    image: url(_internal/pmgen/assets/icons/up.svg);
 }
 #DialogInput::down-arrow {
-    image: url(pmgen/ui/icons/down.svg);
+    image: url(_internal/pmgen/assets/icons/down.svg);
 }
 
 
@@ -1386,9 +1386,9 @@ class MainWindow(QMainWindow):
         bulk_btn.setMouseTracking(True)
 
         bulk_menu = QMenu(bulk_btn)
-        act_run_bulk = QAction("Run Bulk…", self)
+        act_run_bulk = QAction("Run Bulk", self)
         act_run_bulk.triggered.connect(self._start_bulk)
-        act_bulk_settings = QAction("Bulk Settings…", self)
+        act_bulk_settings = QAction("Bulk Settings", self)
         act_bulk_settings.triggered.connect(self._open_bulk_settings)
         bulk_menu.addAction(act_run_bulk)
         bulk_menu.addSeparator()
@@ -1401,7 +1401,14 @@ class MainWindow(QMainWindow):
         title = TitleDragLabel("PmGen", self)
         drag_right = DragRegion(self)
 
-        icon_dir = os.path.join(os.path.dirname(__file__), "icons")
+        if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+            base_dir = sys._MEIPASS
+        else:
+            # .../PmGen/pmgen/ui/main_window.py -> go up three levels to project root
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+
+        icon_dir = os.path.join(base_dir, "pmgen", "assets", "icons")
+
         minimize_icon = os.path.join(icon_dir, "minimize.svg")
         fullscreen_icon = os.path.join(icon_dir, "fullscreen.svg")
         exit_icon = os.path.join(icon_dir, "exit.svg")
@@ -1638,7 +1645,7 @@ class MainWindow(QMainWindow):
         row3.addWidget(QLabel("Output folder:", dlg))
         ed_dir = QLineEdit(cfg.out_dir, dlg)
         ed_dir.setObjectName("DialogInput")
-        btn_browse = QPushButton("Browse…", dlg)
+        btn_browse = QPushButton("Browse", dlg)
         def _pick_dir():
             path = QFileDialog.getExistingDirectory(self, "Select Output Folder", cfg.out_dir or "")
             if path:

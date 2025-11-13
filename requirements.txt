@@ -19,3 +19,4 @@ typing_extensions==4.15.0
 urllib3==2.5.0
 pyinstaller==6.16.0
 pyinstaller-hooks-contrib==2025.9
+reportlab==4.4.4

@@ -1,22 +1,21 @@
 from __future__ import annotations
 from typing import Optional, Any, Iterable, List
-from pmgen.parsing import ParsePmReport
+
 from pmgen.engine.run_rules import run_rules
-from pmgen.types import PmReport as PmReportType, PmItem as PmItemType
+from pmgen.types import PmReport, PmItem
 from pmgen.types import PmReport
-from pmgen.engine.run_rules import run_rules
 from pmgen.parsing.parse_pm_report import parse_pm_report
-from datetime import datetime
+
 from reportlab.lib.pagesizes import LETTER
 from reportlab.lib import colors
 from reportlab.lib.units import inch
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-)
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.platypus.flowables import KeepTogether, HRFlowable
+
 from datetime import datetime
 import os
+
 
 def _collect_all_findings(selection, show_all: bool):
     due = list(getattr(selection, "items", []) or [])
@@ -50,6 +49,7 @@ def _collect_all_findings(selection, show_all: bool):
 
     out.sort(key=lambda x: (getattr(x, "life_used", 0.0), getattr(x, "conf", 0.0)), reverse=True)
     return out
+
 
 def format_report(
     *,
@@ -90,13 +90,11 @@ def format_report(
             return default
 
     # ---------- header line ----------
-    # BUG FIX: don't call _get(..., key=None). Just take the dict.
     hdrs = getattr(report, "headers", {}) or {}
     model  = hdrs.get("model", "Unknown")
     serial = hdrs.get("serial", "Unknown")
 
     # Report date: use header string if present, else now
-    from datetime import datetime
     dt_raw = hdrs.get("date")
     if isinstance(dt_raw, str) and dt_raw.strip():
         dt_str = dt_raw
@@ -122,7 +120,7 @@ def format_report(
     # Pull under-threshold (not-due) items when show_all=True
     not_due_items = []
     if show_all:
-        # NEW: Prefer the full not_due list instead of watch
+        # Prefer the full not_due list instead of watch
         if hasattr(selection, "not_due") and selection.not_due:
             not_due_items = list(selection.not_due)
         elif hasattr(selection, "all_items") and selection.all_items:
@@ -144,10 +142,10 @@ def format_report(
             kit    = getattr(f, "kit_code", None)
             if is_due:
                 most_due_rows.append(f"  • {canon} — {pct} → DUE")
-                most_due_rows.append(f"      ↳ Catalog: {kit or '(N/A)'}")
+                most_due_rows.append(f"      ↳ Unit: {kit or '(N/A)'}")
             else:
                 most_due_rows.append(f"  • {canon} — {pct}")
-                most_due_rows.append(f"      ↳ Catalog: (N/A)")
+                most_due_rows.append(f"      ↳ Unit: (N/A)")
             most_due_rows.append("")
     else:
         for f in due_items:
@@ -155,31 +153,19 @@ def format_report(
             pct   = _fmt_pct(getattr(f, "life_used", None))
             kit   = getattr(f, "kit_code", None) or "(N/A)"
             most_due_rows.append(f"  • {canon} — {pct} → DUE")
-            most_due_rows.append(f"      ↳ Catalog: {kit}")
+            most_due_rows.append(f"      ↳ Unit: {kit}")
             most_due_rows.append("")
 
     # ---------- final parts (grouped by kit → PN × qty) ----------
     final_lines = []
     final_lines.append("Final Parts")
     final_lines.append("───────────────────────────────────────────────────────────────")
-    #final_lines.append("(Unit → Part Number × Qty)")
     final_lines.append("(Qty → Part Number → Unit )")
 
     meta = getattr(selection, "meta", {}) or {}
     grouped = meta.get("selection_pn_grouped", {}) or {}
     flat    = meta.get("selection_pn", {}) or {}
     by_pn   = meta.get("kit_by_pn", {}) or {}
-
-    # if grouped:
-    #     for kit, pns in grouped.items():
-    #         for pn, qty in (pns or {}).items():
-    #             final_lines.append(f"{kit} → {pn} ×{int(qty)}")
-    # elif flat:
-    #     for pn, qty in flat.items():
-    #         kit = by_pn.get(pn, "UNKNOWN-UNIT")
-    #         final_lines.append(f"{kit} → {pn} ×{int(qty)}")
-    # else:
-    #     final_lines.append("(no final parts)")
 
     if grouped:
         for kit, pns in grouped.items():
@@ -203,7 +189,7 @@ def format_report(
         lines.append("")
 
     lines.append("───────────────────────────────────────────────────────────────")
-    lines.append("Most-Due Items")
+    lines.append("PM Items")
     lines.append("───────────────")
     if most_due_rows:
         lines += most_due_rows
@@ -219,38 +205,55 @@ def format_report(
 
     return "\n".join(lines)
 
+
 def _pct_color(v) -> colors.Color:
     if v < 84.0:
         return colors.darkgray
-    
     if v < 100.0:
         return colors.orange
-    
     if v >= 100:
         return colors.red
 
-def _hline(thickness=1, color=colors.HexColor("#DDDDDD")):
-    return HRFlowable(width="100%", thickness=thickness, color=color, spaceBefore=4, spaceAfter=6)
 
+# ──────────────────────────────────────────────────────────────────────────────
+# COMPACT DIVIDER: slimmer spacing to reduce vertical whitespace
+# ──────────────────────────────────────────────────────────────────────────────
+def _hline(thickness=1, color=colors.HexColor("#DDDDDD")):
+    return HRFlowable(width="100%", thickness=thickness, color=color, spaceBefore=2, spaceAfter=2)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# COMPACT TABLE BASE STYLE: smaller fonts & paddings
+# ──────────────────────────────────────────────────────────────────────────────
 def _tbl_style_base():
     return TableStyle(
         [
             ("FONT", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("FONTSIZE", (0, 0), (-1, 0), 10),
+            ("FONTSIZE", (0, 0), (-1, 0), 9),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#3B82F6")),
+
             ("FONT", (0, 1), (-1, -1), "Helvetica"),
             ("FONTSIZE", (0, 1), (-1, -1), 9),
+
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
             ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#E5E7EB")),
             ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
+
+            # COMPACT paddings (defaults ~6; trimmed to 2)
+            ("LEFTPADDING", (0, 0), (-1, -1), 2),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+            ("TOPPADDING", (0, 0), (-1, -1), 2),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
         ]
     )
+
 
 def _zebra(tbl, rows):
     for r in range(1, rows):
         if r % 2 == 0:
             tbl.setStyle(TableStyle([("BACKGROUND", (0, r), (-1, r), colors.HexColor("#F8FAFC"))]))
+
 
 def create_pdf_report(
     *,
@@ -263,7 +266,7 @@ def create_pdf_report(
 ):
     """
     Renders a single parsed PM report into a colorized PDF.
-    (Same interface as your original format_report)
+    (Compact layout; tables allowed to split across pages)
     """
     hdrs = getattr(report, "headers", {}) or {}
     model = hdrs.get("model", "Unknown")
@@ -312,9 +315,7 @@ def create_pdf_report(
             final_parts.append([int(qty), pn, by_pn.get(pn, "UNKNOWN-UNIT")])
 
     # Build PDF
-    best_used = max(
-        [getattr(f, "life_used", 0.0) for f in combined],
-    )
+    best_used = max([getattr(f, "life_used", 0.0) for f in combined])
     best_used_pct = best_used * 100.0
     fname = f"{best_used_pct:.1f}_{serial}.pdf"
 
@@ -323,16 +324,16 @@ def create_pdf_report(
     doc = SimpleDocTemplate(
         path,
         pagesize=LETTER,
-        leftMargin=0.75 * inch,
-        rightMargin=0.75 * inch,
-        topMargin=0.75 * inch,
-        bottomMargin=0.75 * inch,
+        leftMargin=0.5 * inch,
+        rightMargin=0.5 * inch,
+        topMargin=0.5 * inch,
+        bottomMargin=0.5 * inch,
     )
 
     styles = getSampleStyleSheet()
-    styles.add(ParagraphStyle(name="H1", fontName="Helvetica-Bold", fontSize=16, leading=20, textColor=colors.HexColor("#111827")))
-    styles.add(ParagraphStyle(name="Meta", fontName="Helvetica", fontSize=9, textColor=colors.HexColor("#374151")))
-    styles.add(ParagraphStyle(name="Section", fontName="Helvetica-Bold", fontSize=12, leading=14, textColor=colors.HexColor("#111827"), spaceBefore=10))
+    styles.add(ParagraphStyle(name="H1", fontName="Helvetica-Bold", fontSize=14, leading=16, textColor=colors.HexColor("#111827"), spaceBefore=0, spaceAfter=2))
+    styles.add(ParagraphStyle(name="Meta", fontName="Helvetica", fontSize=9, leading=10, textColor=colors.HexColor("#374151"), spaceBefore=0, spaceAfter=2))
+    styles.add(ParagraphStyle(name="Section", fontName="Helvetica-Bold", fontSize=11, leading=12, textColor=colors.HexColor("#111827"), spaceBefore=4, spaceAfter=2))
 
     story = []
     story.append(Paragraph(f"Model: {model}  |  Serial: {serial}  |  Date: {dt_str}", styles["H1"]))
@@ -340,16 +341,15 @@ def create_pdf_report(
     story.append(Paragraph(f"Due threshold: {threshold*100:.1f}%  •  Basis: {life_basis.upper()}", styles["Meta"]))
     if parts:
         story.append(Paragraph("Counters: " + "  ".join(parts), styles["Meta"]))
-    story.append(Spacer(1, 0.15 * inch))
+    story.append(Spacer(1, 4))
 
-    # Most-Due Items
-    story.append(Paragraph("Most-Due Items", styles["Section"]))
-    story.append(_hline())
+    # Most-Due Items (ALLOW SPLIT)
     if most_due:
-        data = [["Canon", "Life Used", "Status", "Catalog"]] + most_due
-        tbl = Table(data, colWidths=[2.9 * inch, 1.0 * inch, 0.9 * inch, 2.1 * inch])
+        data = [["Canon", "Life Used", "Status", "Unit"]] + most_due
+        tbl = Table(data, colWidths=[2.8 * inch, 0.95 * inch, 0.8 * inch, 2.05 * inch])
         tbl.setStyle(_tbl_style_base())
-        tbl.setStyle(TableStyle([("ALIGN", (1, 1), (1, -1), "RIGHT"), ("ALIGN", (2, 1), (2, -1), "CENTER")]))
+        tbl.setStyle(TableStyle([("ALIGN", (1, 1), (1, -1), "RIGHT"),
+                                 ("ALIGN", (2, 1), (2, -1), "CENTER")]))
         _zebra(tbl, len(data))
         for r_idx in range(1, len(data)):
             try:
@@ -359,28 +359,29 @@ def create_pdf_report(
                 pass
         tbl.splitByRow = 1
         tbl.repeatRows = 1
-        story.append(KeepTogether(tbl))
+        story.append(tbl)
     else:
         story.append(Paragraph("(none)", styles["Meta"]))
-    story.append(Spacer(1, 0.15 * inch))
 
-    # Final Parts
+    story.append(Spacer(1, 4))
+
+    # Final Parts (ALLOW SPLIT)
     story.append(Paragraph("Final Parts", styles["Section"]))
     story.append(_hline())
     if final_parts:
         data = [["Qty", "Part Number", "Unit"]] + [[str(q), pn, u] for q, pn, u in final_parts]
-        tbl = Table(data, colWidths=[0.7 * inch, 3.0 * inch, 3.05 * inch])
+        tbl = Table(data, colWidths=[0.6 * inch, 3.0 * inch, 3.0 * inch])
         tbl.setStyle(_tbl_style_base())
         tbl.setStyle(TableStyle([("ALIGN", (0, 1), (0, -1), "RIGHT")]))
         _zebra(tbl, len(data))
         tbl.splitByRow = 1
         tbl.repeatRows = 1
-        story.append(KeepTogether(tbl) if len(data) <= 28 else tbl)
+        story.append(KeepTogether(tbl))
     else:
         story.append(Paragraph("(no final parts)", styles["Meta"]))
-    story.append(Spacer(1, 0.15 * inch))
 
     doc.build(story)
+
 
 def generate_from_bytes(pm_pdf_bytes: bytes, threshold: float, life_basis: str, show_all: bool = False) -> str:
     """
