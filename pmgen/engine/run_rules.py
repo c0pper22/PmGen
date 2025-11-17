@@ -1,4 +1,3 @@
-# run_rules.py
 from __future__ import annotations
 
 from collections import defaultdict
@@ -33,7 +32,13 @@ except Exception:
 # Order can be adjusted if rules develop dependencies
 RULES: List[RuleBase] = [GenericLifeRule(), KitLinkRule()]
 
-def build_context(report: PmReport, threshold: float, life_basis: str) -> Context:
+
+def build_context(
+    report: PmReport,
+    threshold: float,
+    life_basis: str,
+    threshold_enabled: bool = True,
+) -> Context:
     model = (report.headers or {}).get("model", "")
     counters = report.counters or {}
     items_by_canon: Dict[str, List[PmItem]] = defaultdict(list)
@@ -47,7 +52,9 @@ def build_context(report: PmReport, threshold: float, life_basis: str) -> Contex
         items_by_canon=dict(items_by_canon),
         threshold=threshold,
         life_basis=life_basis,
+        threshold_enabled=threshold_enabled,
     )
+
 
 # ---------------------------
 # Helpers for unit semantics
@@ -59,12 +66,14 @@ def _canon_channel(canon: Optional[str]) -> Optional[str]:
     m = re.search(r"\[(K|C|M|Y)\]", canon.upper())
     return m.group(1) if m else None
 
+
 def _is_drum_canon(canon: Optional[str]) -> bool:
     """Identify canons that should be counted *per color drum* only."""
     if not canon:
         return False
     u = canon.upper().strip()
     return u.startswith("DRUM[") and u.endswith("]") and "BLADE" not in u
+
 
 def _is_cst_canon(canon: Optional[str]) -> bool:
     """Return True if the canon belongs to a paper cassette (CST) unit."""
@@ -73,12 +82,14 @@ def _is_cst_canon(canon: Optional[str]) -> bool:
     u = canon.upper()
     return "CST" in u
 
+
 def _cassette_slot_id(canon: Optional[str]) -> Optional[str]:
     """Extract a per-tray id: 1st/2nd/3rd/4th CST (uppercased), else None."""
     if not canon:
         return None
     m = re.search(r"\((?P<slot>(1ST|2ND|3RD|4TH)\s*CST\.?)\)", canon.upper())
     return m.group("slot") if m else None
+
 
 def _unit_bucket_key(kit_code: str, canon: Optional[str]) -> Tuple[str, Optional[str]]:
     """
@@ -106,8 +117,15 @@ def _unit_bucket_key(kit_code: str, canon: Optional[str]) -> Tuple[str, Optional
     # 4) Everything else counts once
     return (kit_code, None)
 
-def run_rules(report: PmReport, threshold: float, life_basis: str) -> Selection:
-    ctx = build_context(report, threshold, life_basis)
+
+def run_rules(
+    report: PmReport,
+    threshold: float,
+    life_basis: str,
+    *,
+    threshold_enabled: bool = True,
+) -> Selection:
+    ctx = build_context(report, threshold, life_basis, threshold_enabled=threshold_enabled)
 
     # 1) Run all rules resiliently
     findings: List[Finding] = []
@@ -134,7 +152,29 @@ def run_rules(report: PmReport, threshold: float, life_basis: str) -> Selection:
     due = [f for f in best.values() if f.due]
     due.sort(key=lambda x: (x.life_used or 0.0, x.conf), reverse=True)
 
-    watch = [f for f in best.values() if not f.due and (f.life_used or 0) >= max(0.0, threshold - 0.05)]
+    # Classify *why* each kit is due: >100% vs threshold-based (<=100%)
+    thr01 = min(max(threshold, 0.0), 1.0)
+    due_over_100: Set[str] = set()
+    due_threshold: Set[str] = set()
+    for f in due:
+        kit_code = getattr(f, "kit_code", None)
+        if not kit_code:
+            continue
+        used = getattr(f, "life_used", None)
+        if used is None:
+            continue
+        if used > 1.0:
+            due_over_100.add(kit_code)
+        elif threshold_enabled and used >= thr01:
+            due_threshold.add(kit_code)
+
+    # Watch band is always “within 5% below the effective threshold”
+    eff_thr = 1.0 if not threshold_enabled else thr01
+    watch = [
+        f
+        for f in best.values()
+        if not f.due and (f.life_used or 0) >= max(0.0, eff_thr - 0.05)
+    ]
     watch.sort(key=lambda x: (x.life_used or 0.0, x.conf), reverse=True)
 
     # 4) Build kit_selection using *unit semantics*
@@ -159,13 +199,15 @@ def run_rules(report: PmReport, threshold: float, life_basis: str) -> Selection:
                 try:
                     kit_selection[kit_code] = int(forced_qty)
                 except Exception:
-                    pass  # ignore bad values; keep computed qty
+                    # ignore bad values; keep computed qty
+                    pass
 
     # 5) Expand to PN totals (optional; selection qty already finalized above)
     ribon_rows: Dict[str, List] = {}
     selection_pn_flat: Dict[str, int] = {}
     if HAVE_RIBON and resolve_with_rows and kit_selection:
         try:
+            # resolve_with_rows expects {kit_code: qty}
             ribon_rows, selection_pn_flat = resolve_with_rows(kit_selection)
         except Exception:
             ribon_rows, selection_pn_flat = {}, {}
@@ -217,7 +259,7 @@ def run_rules(report: PmReport, threshold: float, life_basis: str) -> Selection:
         for pn, qty in selection_pn_flat.items():
             owner = reverse_index.get(pn, "UNKNOWN-UNIT")
             selection_pn_grouped.setdefault(owner, {})
-            selection_pn_grouped[owner][pn] = selection_pn_grouped[owner].get(pn, 0) + int(qty or 0)
+            selection_pn_grouped[owner][pn] = selection_pn_grouped[owner].get(owner, 0) + int(qty or 0)
             kit_by_pn.setdefault(pn, owner)
 
     # 7) Return
@@ -229,6 +271,10 @@ def run_rules(report: PmReport, threshold: float, life_basis: str) -> Selection:
         "selection_pn_grouped": selection_pn_grouped,   # {kit_code: {PN: qty}}
         "kit_by_pn": kit_by_pn,                         # {PN: kit_code}
         "ribon_rows": ribon_rows,                       # raw rows (if any)
+        "due_sources": {
+            "over_100": sorted(due_over_100),
+            "threshold": sorted(due_threshold),
+        },
         "qty_source": "unit_selection+override" if _QTY_OVERRIDES else "unit_selection",
     }
 

@@ -4,7 +4,7 @@ from pmgen.rules.base import Context, RuleBase
 from pmgen.types import Finding
 
 from pmgen.catalog import part_kit_catalog as catalog_mod
-
+from pmgen.rules.generic_life import _is_due
 
 def _ensure_catalog_for_model(model: str):
     """
@@ -116,13 +116,14 @@ class KitLinkRule(RuleBase):
             # Nothing to do if the catalog doesn’t define any units yet
             return out
 
-        # Walk the canons present in the report
         for canon, items in (ctx.items_by_canon or {}).items():
             if not canon:
                 continue
 
             best_used = _best_life_used(items, ctx.life_basis)
-            if best_used is None or best_used < ctx.threshold:
+            if best_used is None:
+                continue
+            if not _is_due(best_used, ctx):
                 continue
 
             kit_code = cmap.get(canon)

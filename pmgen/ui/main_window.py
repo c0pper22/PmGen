@@ -655,12 +655,13 @@ class BulkRunner(QObject):
     progress = pyqtSignal(str)
     finished = pyqtSignal(str)
 
-    def __init__(self, cfg: BulkConfig, threshold: float, life_basis: str,
+    def __init__(self, cfg: BulkConfig, threshold: float, life_basis: str, threshold_enabled: bool = True,
                  unpack_filter_enabled: bool = False, unpack_extra_months: int = 0):
         super().__init__()
         self.cfg = cfg
         self.threshold = threshold
         self.life_basis = life_basis
+        self.threshold_enabled = bool(threshold_enabled)
         self._blacklist = [p.upper() for p in (cfg.blacklist or [])]
         self._unpack_filter_enabled = bool(unpack_filter_enabled)
         self._unpack_extra_months = max(0, min(120, int(unpack_extra_months)))
@@ -774,13 +775,14 @@ class BulkRunner(QObject):
             thr = self.threshold
             basis = self.life_basis
             show_all = self.cfg.show_all
+            thr_enabled = self.threshold_enabled
 
             def work(serial: str):
                 try:
                     with pool.acquire() as sess:
                         blob = get_service_file_bytes(serial, "PMSupport", sess=sess)
                     report = parse_pm_report(blob)
-                    selection = run_rules(report, threshold=thr, life_basis=basis)
+                    selection = run_rules(report, threshold=thr, life_basis=basis, threshold_enabled=thr_enabled)
 
                     all_items = (getattr(selection, "meta", {}) or {}).get("all", []) or getattr(selection, "all_items", []) or []
                     best_used = max([getattr(f, "life_used", 0.0) or 0.0 for f in all_items], default=0.0)
@@ -791,22 +793,25 @@ class BulkRunner(QObject):
                         threshold=thr,
                         life_basis=basis,
                         show_all=show_all,
-                        out_dir=self.cfg.out_dir
+                        out_dir=self.cfg.out_dir,
+                        threshold_enabled=thr_enabled
                     )
 
                     meta = getattr(selection, "meta", {}) or {}
                     grouped = meta.get("selection_pn_grouped", {}) or {}
                     flat    = meta.get("selection_pn", {}) or {}
                     kit_by_pn = meta.get("kit_by_pn", {}) or {}
+                    due_sources = meta.get("due_sources", {}) or {}
 
                     return {
                         "serial": (report.headers or {}).get("serial") or serial,
-                        "model":  (report.headers or {}).get("model")  or "Unknown",
+                        "model": (report.headers or {}).get("model")  or "Unknown",
                         "best_used": float(best_used),
                         "text": "None", # this is old unused
                         "grouped": grouped,
                         "flat": flat,
-                        "kit_by_pn": kit_by_pn
+                        "kit_by_pn": kit_by_pn,
+                        "due_sources": due_sources,
                     }
                 except Exception as e:
                     import traceback
@@ -892,6 +897,7 @@ class BulkRunner(QObject):
                 thr=thr,
                 basis=basis,
                 filename="Final_Summary.pdf",
+                threshold_enabled=thr_enabled
             )
 
             pool.close()
@@ -902,6 +908,7 @@ class BulkRunner(QObject):
 class MainWindow(QMainWindow):
     # ---- PM settings ----
     THRESH_KEY = "pm/due_threshold"
+    THRESH_ENABLED_KEY = "pm/due_threshold_enabled"
     LIFE_BASIS_KEY = "pm/life_basis"
     COLORIZED_KEY = "ui/colorized_output"
     SHOW_ALL_KEY = "ui/show_all_items"
@@ -992,10 +999,10 @@ class MainWindow(QMainWindow):
             v = int(round(float(thr) * 100))
         except Exception:
             v = 80
-        return max(1, min(200, v))
+        return max(0, min(100, v))
 
     def _slider_to_thr(self, val: int) -> float:
-        return max(0.01, min(2.00, val / 100.0))
+        return max(0.0, min(1.00, val / 100.0))
 
     def _get_threshold(self) -> float:
         s = QSettings()
@@ -1003,11 +1010,20 @@ class MainWindow(QMainWindow):
             v = float(s.value(self.THRESH_KEY, 0.80, float))
         except Exception:
             v = 0.80
-        return max(0.0, min(2.0, v))
+        return max(0.0, min(1.0, v))
 
     def _set_threshold(self, v: float):
         s = QSettings()
         s.setValue(self.THRESH_KEY, float(v))
+
+    def _get_threshold_enabled(self) -> bool:
+        s = QSettings()
+        return bool(s.value(self.THRESH_ENABLED_KEY, False, bool))
+
+    def _set_threshold_enabled(self, on: bool):
+        s = QSettings()
+        s.setValue(self.THRESH_ENABLED_KEY, bool(on))
+        self._update_threshold_label()
 
     def _get_life_basis(self) -> str:
         s = QSettings()
@@ -1020,21 +1036,35 @@ class MainWindow(QMainWindow):
 
     def _update_threshold_label(self):
         if hasattr(self, "_thr_label") and self._thr_label is not None:
-            self._thr_label.setText(f"Due threshold: {self._get_threshold() * 100:.1f}%")
+            if not self._get_threshold_enabled():
+                txt = "Threshold: 100.0%"
+            else:
+                txt = f"Threshold: {self._get_threshold() * 100:.1f}%"
+            self._thr_label.setText(txt)
 
     def _update_basis_label(self):
         if hasattr(self, "_basis_label") and self._basis_label is not None:
             self._basis_label.setText(f"Basis: {self._get_life_basis().upper()}")
 
     def _open_due_threshold_dialog(self):
-        dlg = FramelessDialog(self, "Due Threshold", self._icon_dir)
+        dlg = FramelessDialog(self, "Optional Threshold", self._icon_dir)
 
-        top = QLabel("Drag to set the fraction of life used that counts as DUE (0.01–2.00).", dlg)
+        top = QLabel(
+            "Items over 100% life are always DUE.\n"
+            "Optionally enable a lower due threshold (0–100%) to flag items earlier.",
+            dlg,
+        )
         top.setObjectName("DialogLabel")
 
         cur_thr = self._get_threshold()
+        enabled = self._get_threshold_enabled()
+
+        enable_cb = QCheckBox("Enable Optional threshold", dlg)
+        enable_cb.setObjectName("DialogCheckbox")
+        enable_cb.setChecked(enabled)
+
         slider = QSlider(Qt.Orientation.Horizontal, dlg)
-        slider.setRange(1, 200)
+        slider.setRange(0, 100)
         slider.setSingleStep(1)
         slider.setPageStep(5)
         slider.setTickPosition(QSlider.TickPosition.TicksBelow)
@@ -1043,13 +1073,17 @@ class MainWindow(QMainWindow):
 
         pct_box = QDoubleSpinBox(dlg)
         pct_box.setObjectName("DialogInput")
-        pct_box.setRange(1.0, 200.0)
+        pct_box.setRange(0.0, 100.0)
         pct_box.setDecimals(1)
         pct_box.setSingleStep(0.1)
         pct_box.setSuffix("%")
         pct_box.setAlignment(Qt.AlignmentFlag.AlignRight)
         pct_box.setFixedWidth(80)
         pct_box.setValue(cur_thr * 100.0)
+
+        # Respect enabled state
+        slider.setEnabled(enabled)
+        pct_box.setEnabled(enabled)
 
         btn_row = QHBoxLayout()
         reset_btn = QPushButton("Default", dlg)
@@ -1059,15 +1093,17 @@ class MainWindow(QMainWindow):
         btn_row.addWidget(save_btn)
 
         dlg._content_layout.addWidget(top)
+        dlg._content_layout.addWidget(enable_cb)
+
         r1 = QHBoxLayout()
-        r1.setContentsMargins(0, -2, 0, 0) 
+        r1.setContentsMargins(0, -2, 0, 0)
         r1.addWidget(slider, 1)
         r1.addWidget(pct_box)
         dlg._content_layout.addLayout(r1)
         dlg._content_layout.addLayout(btn_row)
 
         def _apply(thr: float):
-            thr = max(0.01, min(2.00, float(thr)))
+            thr = max(0.0, min(1.00, float(thr)))
             self._set_threshold(thr)
             self._update_threshold_label()
             if hasattr(self, "_thr_label"):
@@ -1075,6 +1111,8 @@ class MainWindow(QMainWindow):
             return thr
 
         def on_slider_changed(_val: int):
+            if not slider.isEnabled():
+                return
             thr = self._slider_to_thr(slider.value())
             pct_box.blockSignals(True)
             pct_box.setValue(thr * 100.0)
@@ -1082,14 +1120,19 @@ class MainWindow(QMainWindow):
             _apply(thr)
 
         def on_pct_changed(pct_val: float):
+            if not pct_box.isEnabled():
+                return
             thr = float(pct_val) / 100.0
             thr = _apply(thr)
             slider.blockSignals(True)
             slider.setValue(self._thr_to_slider(thr))
             slider.blockSignals(False)
 
-        slider.valueChanged.connect(on_slider_changed)
-        pct_box.valueChanged.connect(on_pct_changed)
+        def on_enable_changed(checked: bool):
+            self._set_threshold_enabled(checked)
+            slider.setEnabled(checked)
+            pct_box.setEnabled(checked)
+            self._update_threshold_label()
 
         def on_reset():
             def_thr = 0.90
@@ -1099,7 +1142,16 @@ class MainWindow(QMainWindow):
             pct_box.blockSignals(True)
             pct_box.setValue(def_thr * 100.0)
             pct_box.blockSignals(False)
+
+            enable_cb.blockSignals(True)
+            enable_cb.setChecked(False)
+            enable_cb.blockSignals(False)
+            on_enable_changed(False)
             _apply(def_thr)
+
+        slider.valueChanged.connect(on_slider_changed)
+        pct_box.valueChanged.connect(on_pct_changed)
+        enable_cb.toggled.connect(on_enable_changed)
 
         reset_btn.clicked.connect(on_reset)
         save_btn.clicked.connect(dlg.accept)
@@ -1282,6 +1334,7 @@ class MainWindow(QMainWindow):
                 threshold=self._get_threshold(),
                 life_basis=self._get_life_basis(),
                 show_all=self._get_show_all(),
+                threshold_enabled=self._get_threshold_enabled(),
             )
             self.editor.setPlainText(out)
             self._apply_colorized_highlighter()
@@ -1346,11 +1399,11 @@ class MainWindow(QMainWindow):
         settings_menu.addAction(self.act_login)
         settings_menu.addAction(self.act_logout)
 
-        act_due = QAction("Due Threshold…", self)
+        act_due = QAction("Optional Threshold", self)
         act_due.triggered.connect(self._open_due_threshold_dialog)
         settings_menu.addAction(act_due)
 
-        act_basis = QAction("Life Basis…", self)
+        act_basis = QAction("Life Basis", self)
         act_basis.triggered.connect(self._open_life_basis_dialog)
         settings_menu.addAction(act_basis)
 
@@ -1816,10 +1869,12 @@ class MainWindow(QMainWindow):
     def _start_bulk(self):
         cfg = self._get_bulk_config()
         cfg.show_all = self._get_show_all()
+        self.editor.clear()
         self._log_queue.append(f"[Info] Bulk Starting… (Top N={cfg.top_n}, Pool={cfg.pool_size})")
 
         threshold = self._get_threshold()
         life_basis = self._get_life_basis()
+        thr_enabled = self._get_threshold_enabled()
 
         if self._bulk_thread and self._bulk_thread.isRunning():
             self._log_queue.append("[Info] A run is already active.")
@@ -1830,6 +1885,7 @@ class MainWindow(QMainWindow):
             cfg,
             threshold=threshold,
             life_basis=life_basis,
+            threshold_enabled=thr_enabled,
             unpack_filter_enabled=self._get_unpack_filter_enabled(),
             unpack_extra_months=self._get_unpack_extra_months(),
         )

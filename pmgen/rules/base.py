@@ -11,6 +11,7 @@ class Context:
     items_by_canon: Dict[str, List[PmItem]]
     threshold: float
     life_basis: str  # 'page' or 'drive'
+    threshold_enabled: bool = False
 
 class RuleBase:
     name: str = "RuleBase"

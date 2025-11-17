@@ -57,7 +57,8 @@ def format_report(
     selection,
     threshold: float,
     life_basis: str,
-    show_all: bool = False
+    show_all: bool = False,
+    threshold_enabled: bool = True
 ) -> str:
     """
     Pretty-print the single-report result.
@@ -102,14 +103,18 @@ def format_report(
         dt_str = datetime.now().strftime("%m-%d-%Y %H:%M")
 
     # ---------- counters ----------
-    counters_lines = []
+    counters_lines: List[str] = []
     c = getattr(report, "counters", {}) or {}
     if isinstance(c, dict):
         parts = []
-        if _get(c, "color") is not None: parts.append(f"Color: {_get(c, 'color')}")
-        if _get(c, "black") is not None: parts.append(f"Black: {_get(c, 'black')}")
-        if _get(c, "df")    is not None: parts.append(f"DF: {_get(c, 'df')}")
-        if _get(c, "total") is not None: parts.append(f"Total: {_get(c, 'total')}")
+        if _get(c, "color") is not None:
+            parts.append(f"Color: {_get(c, 'color')}")
+        if _get(c, "black") is not None:
+            parts.append(f"Black: {_get(c, 'black')}")
+        if _get(c, "df") is not None:
+            parts.append(f"DF: {_get(c, 'df')}")
+        if _get(c, "total") is not None:
+            parts.append(f"Total: {_get(c, 'total')}")
         if parts:
             counters_lines.append("Counters:")
             counters_lines.append("  " + "  ".join(parts))
@@ -118,86 +123,113 @@ def format_report(
     due_items = list(getattr(selection, "items", []) or [])
 
     # Pull under-threshold (not-due) items when show_all=True
-    not_due_items = []
     if show_all:
-        # Prefer the full not_due list instead of watch
-        if hasattr(selection, "not_due") and selection.not_due:
-            not_due_items = list(selection.not_due)
-        elif hasattr(selection, "all_items") and selection.all_items:
-            not_due_items = [f for f in selection.all_items if not getattr(f, "due", False)]
-        else:
-            meta = getattr(selection, "meta", {}) or {}
-            all_items = meta.get("all", []) or meta.get("all_items", []) or []
-            not_due_items = [f for f in all_items if not getattr(f, "due", False)]
+        combined = _collect_all_findings(selection, show_all=True)
+    else:
+        combined = due_items
 
     # Build the rows (sorted by life_used then conf)
-    most_due_rows = []
-    if show_all:
-        combined = _collect_all_findings(selection, show_all)
-        combined.sort(key=lambda x: (getattr(x, "life_used", 0.0), getattr(x, "conf", 0.0)), reverse=True)
-        for f in combined:
-            canon = getattr(f, "canon", "—")
-            pct   = _fmt_pct(getattr(f, "life_used", None))
-            is_due = bool(getattr(f, "due", False))
-            kit    = getattr(f, "kit_code", None)
-            if is_due:
-                most_due_rows.append(f"  • {canon} — {pct} → DUE")
-                most_due_rows.append(f"      ↳ Unit: {kit or '(N/A)'}")
-            else:
-                most_due_rows.append(f"  • {canon} — {pct}")
-                most_due_rows.append(f"      ↳ Unit: (N/A)")
-            most_due_rows.append("")
-    else:
-        for f in due_items:
-            canon = getattr(f, "canon", "—")
-            pct   = _fmt_pct(getattr(f, "life_used", None))
-            kit   = getattr(f, "kit_code", None) or "(N/A)"
+    most_due_rows: List[str] = []
+    for f in combined:
+        canon = getattr(f, "canon", "—")
+        pct   = _fmt_pct(getattr(f, "life_used", None))
+        kit   = getattr(f, "kit_code", None) or "(N/A)"
+        is_due = bool(getattr(f, "due", False))
+        if is_due:
             most_due_rows.append(f"  • {canon} — {pct} → DUE")
             most_due_rows.append(f"      ↳ Unit: {kit}")
-            most_due_rows.append("")
+        else:
+            most_due_rows.append(f"  • {canon} — {pct}")
+            most_due_rows.append(f"      ↳ Unit: (N/A)")
+        most_due_rows.append("")
 
     # ---------- final parts (grouped by kit → PN × qty) ----------
-    final_lines = []
-    final_lines.append("Final Parts")
-    final_lines.append("───────────────────────────────────────────────────────────────")
-    final_lines.append("(Qty → Part Number → Unit )")
+    final_lines: List[str] = []
 
     meta = getattr(selection, "meta", {}) or {}
     grouped = meta.get("selection_pn_grouped", {}) or {}
     flat    = meta.get("selection_pn", {}) or {}
     by_pn   = meta.get("kit_by_pn", {}) or {}
+    due_src = meta.get("due_sources", {}) or {}
+
+    over_100_kits    = set(due_src.get("over_100", []) or [])
+    threshold_kits   = set(due_src.get("threshold", []) or [])
+    threshold_only   = threshold_kits - over_100_kits
+
+    over_rows: List[str] = []
+    thr_rows: List[str] = []
 
     if grouped:
         for kit, pns in grouped.items():
-            for pn, qty in (pns or {}).items():
-                final_lines.append(f"{int(qty)}x → {pn} → {kit}")
+            if kit in over_100_kits:
+                for pn, qty in (pns or {}).items():
+                    over_rows.append(f"{int(qty)}x → {pn} → {kit}")
+            elif kit in threshold_only:
+                for pn, qty in (pns or {}).items():
+                    thr_rows.append(f"{int(qty)}x → {pn} → {kit}")
     elif flat:
         for pn, qty in flat.items():
             kit = by_pn.get(pn, "UNKNOWN-UNIT")
-            final_lines.append(f"{int(qty)}x → {pn} → {kit}")
+            if kit in over_100_kits:
+                over_rows.append(f"{int(qty)}x → {pn} → {kit}")
+            elif kit in threshold_only:
+                thr_rows.append(f"{int(qty)}x → {pn} → {kit}")
+
+    # Over-100% section
+    final_lines.append("Final Parts — Over 100%")
+    final_lines.append("───────────────────────────────────────────────────────────────")
+    final_lines.append("(Qty → Part Number → Unit )")
+    if over_rows:
+        final_lines.extend(over_rows)
     else:
-        final_lines.append("(no final parts)")
+        final_lines.append("(none)")
+    final_lines.append("")
 
-    # ---------- compose ----------
-    lines = []
-    lines.append(f"Model: {model}  |  Serial: {serial}  |  Date: {dt_str}")
-    lines.append(f"Due threshold: {threshold * 100:.1f}%  •  Basis: {life_basis.upper()}")
-    lines.append("")
+    # Threshold-based section
+    final_lines.append("Final Parts — Threshold")
+    final_lines.append("───────────────────────────────────────────────────────────────")
+    final_lines.append("(Qty → Part Number → Unit )")
+    if thr_rows:
+        final_lines.extend(thr_rows)
+    else:
+        final_lines.append("(none)")
+    final_lines.append("")
 
-    if counters_lines:
-        lines += counters_lines
-        lines.append("")
+    # ---------- assemble full text report ----------
+    lines: List[str] = []
 
+    # Title + header
+    lines.append("Single PM Report")
     lines.append("───────────────────────────────────────────────────────────────")
-    lines.append("PM Items")
-    lines.append("───────────────")
-    if most_due_rows:
-        lines += most_due_rows
+    lines.append(f"Model: {model}  |  Serial: {serial}  |  Date: {dt_str}")
+
+    # Threshold line
+    if threshold_enabled:
+        thr_text = f"{threshold * 100:.1f}%"
     else:
-        lines.append("  (none)")
+        thr_text = "Off (only >100% due)"
+    lines.append(f"Due threshold: {thr_text}  •  Basis: {life_basis.upper()}")
+
+    # Counters
+    if counters_lines:
+        lines.append("")
+        lines.extend(counters_lines)
+
+    # Most-due section
+    lines.append("")
+    lines.append("Most-Due Items")
+    lines.append("───────────────────────────────────────────────────────────────")
+    if most_due_rows:
+        lines.extend(most_due_rows)
+    else:
+        lines.append("(none)")
         lines.append("")
     lines.append("")
-    lines += final_lines
+
+    # Final parts sections
+    lines.extend(final_lines)
+
+    # Footer
     lines.append("")
     lines.append("───────────────────────────────────────────────────────────────")
     lines.append("End of Report")
@@ -263,6 +295,7 @@ def create_pdf_report(
     life_basis: str,
     show_all: bool = False,
     out_dir: str = ".",
+    threshold_enabled: bool = True,
 ):
     """
     Renders a single parsed PM report into a colorized PDF.
@@ -302,17 +335,32 @@ def create_pdf_report(
     # Final parts
     meta = getattr(selection, "meta", {}) or {}
     grouped = meta.get("selection_pn_grouped", {}) or {}
-    flat = meta.get("selection_pn", {}) or {}
-    by_pn = meta.get("kit_by_pn", {}) or {}
+    flat    = meta.get("selection_pn", {}) or {}
+    by_pn   = meta.get("kit_by_pn", {}) or {}
+    due_src = meta.get("due_sources", {}) or {}
 
-    final_parts = []
+    over_100_kits  = set(due_src.get("over_100", []) or [])
+    threshold_kits = set(due_src.get("threshold", []) or [])
+    threshold_only = threshold_kits - over_100_kits
+
+    final_over: List[List[Any]] = []
+    final_thr: List[List[Any]] = []
+
     if grouped:
         for unit, pns in grouped.items():
-            for pn, qty in (pns or {}).items():
-                final_parts.append([int(qty), pn, unit])
+            if unit in over_100_kits:
+                for pn, qty in (pns or {}).items():
+                    final_over.append([int(qty), pn, unit])
+            elif unit in threshold_only:
+                for pn, qty in (pns or {}).items():
+                    final_thr.append([int(qty), pn, unit])
     elif flat:
         for pn, qty in flat.items():
-            final_parts.append([int(qty), pn, by_pn.get(pn, "UNKNOWN-UNIT")])
+            unit = by_pn.get(pn, "UNKNOWN-UNIT")
+            if unit in over_100_kits:
+                final_over.append([int(qty), pn, unit])
+            elif unit in threshold_only:
+                final_thr.append([int(qty), pn, unit])
 
     # Build PDF
     best_used = max([getattr(f, "life_used", 0.0) for f in combined])
@@ -338,7 +386,11 @@ def create_pdf_report(
     story = []
     story.append(Paragraph(f"Model: {model}  |  Serial: {serial}  |  Date: {dt_str}", styles["H1"]))
     story.append(_hline())
-    story.append(Paragraph(f"Due threshold: {threshold*100:.1f}%  •  Basis: {life_basis.upper()}", styles["Meta"]))
+    if threshold_enabled:
+        thr_text = f"{threshold*100:.1f}%"
+    else:
+        thr_text = "Off (only >100% due)"
+    story.append(Paragraph(f"Due threshold: {thr_text}  •  Basis: {life_basis.upper()}", styles["Meta"]))
     if parts:
         story.append(Paragraph("Counters: " + "  ".join(parts), styles["Meta"]))
     story.append(Spacer(1, 4))
@@ -365,11 +417,11 @@ def create_pdf_report(
 
     story.append(Spacer(1, 4))
 
-    # Final Parts (ALLOW SPLIT)
-    story.append(Paragraph("Final Parts", styles["Section"]))
+    # Final Parts — Over 100% (ALLOW SPLIT)
+    story.append(Paragraph("Final Parts — Over 100%", styles["Section"]))
     story.append(_hline())
-    if final_parts:
-        data = [["Qty", "Part Number", "Unit"]] + [[str(q), pn, u] for q, pn, u in final_parts]
+    if final_over:
+        data = [["Qty", "Part Number", "Unit"]] + [[str(q), pn, u] for q, pn, u in final_over]
         tbl = Table(data, colWidths=[0.6 * inch, 3.0 * inch, 3.0 * inch])
         tbl.setStyle(_tbl_style_base())
         tbl.setStyle(TableStyle([("ALIGN", (0, 1), (0, -1), "RIGHT")]))
@@ -378,22 +430,47 @@ def create_pdf_report(
         tbl.repeatRows = 1
         story.append(KeepTogether(tbl))
     else:
-        story.append(Paragraph("(no final parts)", styles["Meta"]))
+        story.append(Paragraph("(none)", styles["Meta"]))
+
+    story.append(Spacer(1, 4))
+
+    # Final Parts — Threshold (ALLOW SPLIT)
+    story.append(Paragraph("Final Parts — Threshold", styles["Section"]))
+    story.append(_hline())
+    if final_thr:
+        data = [["Qty", "Part Number", "Unit"]] + [[str(q), pn, u] for q, pn, u in final_thr]
+        tbl = Table(data, colWidths=[0.6 * inch, 3.0 * inch, 3.0 * inch])
+        tbl.setStyle(_tbl_style_base())
+        tbl.setStyle(TableStyle([("ALIGN", (0, 1), (0, -1), "RIGHT")]))
+        _zebra(tbl, len(data))
+        tbl.splitByRow = 1
+        tbl.repeatRows = 1
+        story.append(KeepTogether(tbl))
+    else:
+        story.append(Paragraph("(none)", styles["Meta"]))
 
     doc.build(story)
 
 
-def generate_from_bytes(pm_pdf_bytes: bytes, threshold: float, life_basis: str, show_all: bool = False) -> str:
-    """
-    Orchestrates: parse -> rules -> selection -> format.
-    `show_all=True` includes under-threshold PL items in 'Most-Due Items' without PN resolution.
-    """
+def generate_from_bytes(
+    pm_pdf_bytes: bytes,
+    threshold: float,
+    life_basis: str,
+    show_all: bool = False,
+    threshold_enabled: bool = True,
+) -> str:
     report: PmReport = parse_pm_report(pm_pdf_bytes)
-    selection = run_rules(report, threshold=threshold, life_basis=life_basis)
+    selection = run_rules(
+        report,
+        threshold=threshold,
+        life_basis=life_basis,
+        threshold_enabled=threshold_enabled,
+    )
     return format_report(
         report=report,
         selection=selection,
         threshold=threshold,
         life_basis=life_basis,
         show_all=show_all,
+        threshold_enabled=threshold_enabled,
     )
