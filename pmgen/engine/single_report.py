@@ -47,7 +47,7 @@ def _collect_all_findings(selection, show_all: bool):
             out.append(f)
             seen.add(k)
 
-    out.sort(key=lambda x: (getattr(x, "life_used", 0.0), getattr(x, "conf", 0.0)), reverse=True)
+    out.sort(key=lambda x: ((getattr(x, "life_used", None) or 0.0), getattr(x, "conf", 0.0)), reverse=True)
     return out
 
 
@@ -323,12 +323,15 @@ def create_pdf_report(
             not_due_items = [f for f in all_items if not getattr(f, "due", False)]
 
     combined = due_items + not_due_items if show_all else due_items
-    combined.sort(key=lambda x: getattr(x, "life_used", 0.0), reverse=True)
+    combined.sort(
+        key=lambda x: (getattr(x, "life_used", None) or 0.0),
+        reverse=True,
+    )
 
     most_due = []
     for f in combined:
         canon = getattr(f, "canon", "—")
-        pct = getattr(f, "life_used", 0.0) * 100
+        pct = (getattr(f, "life_used", None) or 0.0) * 100.0
         kit = getattr(f, "kit_code", None) or "(N/A)"
         most_due.append([canon, f"{pct:.1f}%", "DUE" if getattr(f, "due", False) else "", kit])
 
@@ -363,7 +366,14 @@ def create_pdf_report(
                 final_thr.append([int(qty), pn, unit])
 
     # Build PDF
-    best_used = max([getattr(f, "life_used", 0.0) for f in combined])
+    if combined:
+        best_used = max(
+            (getattr(f, "life_used", None) or 0.0)
+            for f in combined
+        )
+    else:
+        best_used = 0.0
+
     best_used_pct = best_used * 100.0
     fname = f"{best_used_pct:.1f}_{serial}.pdf"
 

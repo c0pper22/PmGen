@@ -834,60 +834,11 @@ class BulkRunner(QObject):
                         self.progress.emit(f"[Bulk] {s}: ERROR — {e}")
 
             ok = [r for r in results if "error" not in r]
-            ok.sort(key=lambda r: r["best_used"], reverse=True)
+            ok.sort(key=lambda r: (r.get("best_used") or 0.0), reverse=True)
             top = ok[: self.cfg.top_n]
 
-            # for r in top:
-            #     pct = self._fmt_pct(r["best_used"]).replace("%", "")
-            #     fname = f"{pct}_{r['serial']}.txt"
-            #     path = os.path.join(self.cfg.out_dir, fname)
-            #     with open(path, "w", encoding="utf-8") as f:
-            #         f.write(r["text"])
             self.progress.emit(f"[Info] Wrote {len(top)} report files to: {self.cfg.out_dir}")
 
-            # lines = []
-            # lines.append("Bulk Final Summary")
-            # lines.append("───────────────────────────────────────────────────────────────")
-            # lines.append(f"Threshold: {thr:.2f} • Basis: {basis.upper()}")
-            # lines.append(f"Selected top {len(top)} of {len(ok)} successful (from {len(results)} attempts).")
-            # lines.append("")
-
-            # total_upn = {}
-            # for r in top:
-            #     lines.append(f"{r['serial']}  —  best used {self._fmt_pct(r['best_used'])}  —  {r['model']}")
-            #     grouped = r.get("grouped") or {}
-
-            #     if not grouped:
-            #         flat = r.get("flat") or {}
-            #         kit_by_pn = r.get("kit_by_pn") or {}
-            #         if not flat:
-            #             lines.append("  (no final parts)")
-            #             lines.append("")
-            #         else:
-            #             for pn, qty in flat.items():
-            #                 unit = kit_by_pn.get(pn, "UNKNOWN-UNIT")
-            #                 lines.append(f"  • {int(qty)}x → {pn} → {unit}")
-            #                 total_upn[(unit, pn)] = total_upn.get((unit, pn), 0) + int(qty)
-            #             lines.append("")
-            #     else:
-            #         for unit, pnmap in grouped.items():
-            #             for pn, qty in (pnmap or {}).items():
-            #                 lines.append(f"  • {int(qty)}x → {pn} → {unit}")
-            #                 total_upn[(unit, pn)] = total_upn.get((unit, pn), 0) + int(qty)
-            #         lines.append("")
-
-            # lines.append("All Serials — Consolidated Parts")
-            # lines.append("───────────────────────────────────────────────────────────────")
-            # if total_upn:
-            #     for (unit, pn) in sorted(total_upn.keys(), key=lambda k: (k[0], k[1])):
-            #         lines.append(f"  • {int(total_upn[(unit, pn)])}x".ljust(8) + f"→ {pn} → {unit}")
-            # else:
-            #     lines.append("  (none)")
-            # lines.append("")
-
-            #sum_path = os.path.join(self.cfg.out_dir, "Final_Summary")
-            # with open(sum_path, "w", encoding="utf-8") as f:
-            #     f.write("\n".join(lines))
             from pmgen.engine.final_report import write_final_summary_pdf
 
             pdf_path = write_final_summary_pdf(

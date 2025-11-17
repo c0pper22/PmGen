@@ -60,15 +60,21 @@ class GenericLifeRule(RuleBase):
         for canon, items in ctx.items_by_canon.items():
             for it in items:
                 used = _life_used(it, ctx.life_basis)
-                if used is None:
-                    continue
 
+                # Determine due / reason text without crashing on None
                 due = _is_due(used, ctx)
+
+                if isinstance(used, (int, float)):
+                    used_dbg = f"{used:.2f}"
+                else:
+                    used_dbg = "N/A"
+
                 reason = (
-                    f"{canon}: basis={ctx.life_basis} used={used:.2f} "
+                    f"{canon}: basis={ctx.life_basis} used={used_dbg} "
                     f"threshold_enabled={getattr(ctx, 'threshold_enabled', True)} "
                     f"threshold={ctx.threshold:.2f}"
                 )
+
                 ev = {
                     "page_life": it.page_life,
                     "drive_life": it.drive_life,
@@ -77,10 +83,11 @@ class GenericLifeRule(RuleBase):
                     "drive_current": it.drive_current,
                     "drive_expected": it.drive_expected,
                 }
+
                 out.append(
                     Finding(
                         canon=canon or (it.canon or it.descriptor or "?"),
-                        life_used=used,
+                        life_used=used,   # may be None; formatter already handles this as "—"
                         due=due,
                         conf=0.8,
                         reason=reason,
