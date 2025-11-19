@@ -186,20 +186,20 @@ def format_report(
     final_lines.append("")
 
     # Threshold-based section
-    final_lines.append("Final Parts — Threshold")
-    final_lines.append("───────────────────────────────────────────────────────────────")
-    final_lines.append("(Qty → Part Number → Unit )")
     if thr_rows:
-        final_lines.extend(thr_rows)
-    else:
-        final_lines.append("(none)")
-    final_lines.append("")
+        final_lines.append("Final Parts — Threshold")
+        final_lines.append("───────────────────────────────────────────────────────────────")
+        final_lines.append("(Qty → Part Number → Unit )")
+        if thr_rows:
+            final_lines.extend(thr_rows)
+        else:
+            final_lines.append("(none)")
+        final_lines.append("")
 
     # ---------- assemble full text report ----------
     lines: List[str] = []
 
     # Title + header
-    lines.append("Single PM Report")
     lines.append("───────────────────────────────────────────────────────────────")
     lines.append(f"Model: {model}  |  Serial: {serial}  |  Date: {dt_str}")
 
@@ -207,7 +207,7 @@ def format_report(
     if threshold_enabled:
         thr_text = f"{threshold * 100:.1f}%"
     else:
-        thr_text = "Off (only >100% due)"
+        thr_text = "100.0%"
     lines.append(f"Due threshold: {thr_text}  •  Basis: {life_basis.upper()}")
 
     # Counters
@@ -217,7 +217,7 @@ def format_report(
 
     # Most-due section
     lines.append("")
-    lines.append("Most-Due Items")
+    lines.append("Highest Wear Items")
     lines.append("───────────────────────────────────────────────────────────────")
     if most_due_rows:
         lines.extend(most_due_rows)
@@ -399,7 +399,7 @@ def create_pdf_report(
     if threshold_enabled:
         thr_text = f"{threshold*100:.1f}%"
     else:
-        thr_text = "Off (only >100% due)"
+        thr_text = "100.0%"
     story.append(Paragraph(f"Due threshold: {thr_text}  •  Basis: {life_basis.upper()}", styles["Meta"]))
     if parts:
         story.append(Paragraph("Counters: " + "  ".join(parts), styles["Meta"]))
@@ -445,19 +445,20 @@ def create_pdf_report(
     story.append(Spacer(1, 4))
 
     # Final Parts — Threshold (ALLOW SPLIT)
-    story.append(Paragraph("Final Parts — Threshold", styles["Section"]))
-    story.append(_hline())
     if final_thr:
-        data = [["Qty", "Part Number", "Unit"]] + [[str(q), pn, u] for q, pn, u in final_thr]
-        tbl = Table(data, colWidths=[0.6 * inch, 3.0 * inch, 3.0 * inch])
-        tbl.setStyle(_tbl_style_base())
-        tbl.setStyle(TableStyle([("ALIGN", (0, 1), (0, -1), "RIGHT")]))
-        _zebra(tbl, len(data))
-        tbl.splitByRow = 1
-        tbl.repeatRows = 1
-        story.append(KeepTogether(tbl))
-    else:
-        story.append(Paragraph("(none)", styles["Meta"]))
+        story.append(Paragraph("Final Parts — Threshold", styles["Section"]))
+        story.append(_hline())
+        if final_thr:
+            data = [["Qty", "Part Number", "Unit"]] + [[str(q), pn, u] for q, pn, u in final_thr]
+            tbl = Table(data, colWidths=[0.6 * inch, 3.0 * inch, 3.0 * inch])
+            tbl.setStyle(_tbl_style_base())
+            tbl.setStyle(TableStyle([("ALIGN", (0, 1), (0, -1), "RIGHT")]))
+            _zebra(tbl, len(data))
+            tbl.splitByRow = 1
+            tbl.repeatRows = 1
+            story.append(KeepTogether(tbl))
+        else:
+            story.append(Paragraph("(none)", styles["Meta"]))
 
     doc.build(story)
 
