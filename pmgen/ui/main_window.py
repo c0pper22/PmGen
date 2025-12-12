@@ -25,7 +25,7 @@ from .components import (
 from .highlighter import OutputHighlighter
 from .workers import BulkConfig, BulkRunner
 
-VERSION = "2.2.2"
+VERSION = "2.2.3"
 SERVICE_NAME = "PmGen"
 
 # Constants
