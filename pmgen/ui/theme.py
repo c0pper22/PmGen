@@ -1,0 +1,151 @@
+from PyQt6.QtWidgets import QApplication
+
+GLOBAL_STYLE_DARK = """
+#TopBarBg { background-color: #202225; }
+#MainEditor { background: #1e1f22; color: #e9e9e9; border: 1px solid #000000; font-family: Consolas, "Fira Code", monospace; font-size: 13px; }
+QMainWindow { background: #181a1b; }
+QLabel#TitleLabel { color: #e9e9e9; font-size: 16pt; font-weight: 500; }
+
+/* Toolbar */
+QToolBar { background: transparent; border: none; spacing: 0px; padding: 0 8px; }
+QToolButton { border: none; background: transparent; padding: 6px 8px; }
+QToolButton:hover { background-color: rgba(127,127,127,0.15); border-radius: 0; }
+QToolButton#SettingsBtn, QToolButton#BulkBtn { padding: 6px 10px; border-radius: 0; font-weight: 500; }
+QToolButton#SettingsBtn::menu-indicator, QToolButton#BulkBtn::menu-indicator { image: none; width: 0px; }
+
+/* Menus */
+QMenu { background: #2a2c2f; color: #e9e9e9; border: 1px solid #3a3d41; }
+QMenu::item:selected { background: #3a3d41; }
+
+/* Frameless dialogs */
+QDialog#FramelessDialogRoot { background: #1f2023; border: 1px solid #000000; border-radius: 0; }
+#DialogTitleBar { background: #202225; border-top-left-radius: 0; border-top-right-radius: 0; }
+#DialogTitleLabel { color: #e9e9e9; font-weight: 600; }
+#DialogBtn { padding: 6px 10px; border-radius: 0; }
+#DialogSeparator { background: #000000; max-height: 1px; min-height: 1px; }
+#DialogCheckbox { background: #1f2023; }
+#DialogCheckbox::indicator { border: 1px solid #000000; width:16px; height:16px; }
+QCheckBox#DialogCheckbox::indicator:checked { background:#1f2023; border:1px solid #000000; image: url(_internal/pmgen/assets/icons/checkmark.svg); }
+QCheckBox#DialogCheckbox::indicator:unchecked { image: none; }
+#DialogLabel { background: #1f2023; color: #e9e9e9; }
+#UserLabel { background: #1f2023; color: #e9e9e9; font-weight: 800 }
+#DialogInput { background: #2a2c2f; color: #e9e9e9; border: 1px solid #000000; font-weight: 800; }
+#DialogInput:focus { background: #2a2c2f; color: #e9e9e9; border-radius: 0; border: 1px solid #000000; font-weight: 800 }
+#DialogInput::up-arrow { image: url(_internal/pmgen/assets/icons/up.svg); }
+#DialogInput::down-arrow { image: url(_internal/pmgen/assets/icons/down.svg); }
+
+/* Secondary bar */
+#SecondaryBar { background: #202225; border: 1px solid #000000; border-radius: 0; padding: 6px; }
+
+/* Keep support for QLineEdit if used anywhere else */
+QLineEdit#IdInput { background: #000000; color: #e9e9e9; border: 1px solid #000000; border-radius: 0; padding: 6px 8px; font-weight: 800 }
+QLineEdit#IdInput:focus { border: 1px solid #000000; }
+
+/* Editable combo styling for the recent-serials input */
+QComboBox#IdInput { border: 1px solid #000000; border-radius: 0; padding: 0 6px; background: #2a2c2f; color: #e9e9e9; font-weight: 800; }
+QComboBox#IdInput::drop-down { width: 0px; border: none; }
+QComboBox#IdInput QLineEdit { background: #000000; color: #e9e9e9; border: none; padding: 6px 8px; font-weight: 800; }
+
+QPushButton#GenerateBtn { padding: 6px 12px; border-radius: 0; border: 1px solid #000000; background: #2a2c2f; color: #e9e9e9; }
+QPushButton#GenerateBtn:hover { background: #33363b; }
+
+QPushButton { padding: 6px 12px; border-radius: 0; border: 1px solid #000000; background: #2a2c2f; color: #e9e9e9; }
+QPushButton:hover { background: #33363b; }
+QDoubleSpinBox#DialogInput {
+    border: 1px solid #000000;
+    background: #2a2c2f;
+    color: #ffffff;
+    border-radius: 0;
+    padding-right: 6px;  
+    selection-background-color: #000000;
+    selection-color: #ffffff;
+}
+
+/* Remove both arrow buttons completely */
+QDoubleSpinBox#DialogInput::up-button,
+QDoubleSpinBox#DialogInput::down-button { width: 0; height: 0; border: none; margin: 0; padding: 0; }
+
+/* Hide arrow icons */
+QDoubleSpinBox#DialogInput::up-arrow,
+QDoubleSpinBox#DialogInput::down-arrow { image: none; }
+
+/* Disabled state */
+QDoubleSpinBox#DialogInput:disabled { color: #8a8d91; background: #191b1e; border-color: #2a2c2f; }
+
+QScrollBar:vertical {
+    border-left: 1px solid #000000;
+    background: #1e1f22;
+    width: 14px;
+    margin: 0px;
+}
+QScrollBar::handle:vertical {
+    background: #44474d;
+    min-height: 20px;
+    border: 1px solid #000000;
+    margin: 2px;
+}
+QScrollBar::handle:vertical:hover { background: #5f636a; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
+
+#SettingsBtn {
+    color: #ffffff;
+}
+#BulkBtn {
+    color: #ffffff;
+}
+
+QLabel {
+    color: #ffffff;
+}
+
+#DialogCheckbox {
+    color: #ffffff;
+}
+
+QSlider::groove:horizontal#ThresholdSlider {
+    border: 1px solid #000000;
+    background: #181a1b;
+    height: 8px;
+    margin: 2px 0;
+}
+
+QSlider::handle:horizontal#ThresholdSlider {
+    background: #44474d;
+    border: 1px solid #000000;
+    width: 16px;
+    height: 16px;
+    margin: -5px 0;
+    border-radius: 0;
+}
+
+QSlider::handle:horizontal:hover#ThresholdSlider {
+    background: #5f636a;
+}
+
+QSlider::sub-page:horizontal#ThresholdSlider {
+    background: #2a2c2f;
+    border: 1px solid #000000;
+    height: 8px;
+}
+
+QSlider::add-page:horizontal#ThresholdSlider {
+    background: #181a1b;
+    border: 1px solid #000000;
+    height: 8px;
+}
+
+QComboBox#DialogInput QAbstractItemView {
+    background: #2a2c2f;
+    border: 1px solid #000000;
+    color: #e9e9e9;
+    selection-background-color: #3a3d41;
+    selection-color: #ffffff;
+    outline: 0;
+}
+
+"""
+
+def apply_static_theme(app: QApplication):
+    app.setStyle("Fusion")
+    app.setStyleSheet(GLOBAL_STYLE_DARK)

@@ -101,12 +101,13 @@ def _extract_anti_forgery(html: str) -> str:
 def login(sess: requests.Session) -> None:
     """
     Logs in the provided session using saved credentials.
-    Raises on failure (same behavior as before).
+    Raises on failure.
     """
     username = get_saved_username()
     password = get_saved_password()
+    
     if not (username and password):
-        raise RuntimeError("No saved credentials. Use Settings → Credentials…")
+        raise RuntimeError("No saved credentials. Use Settings -> Credentials...")
 
     log.info("Fetching login page for token.")
     r = sess.get(LOGIN_PAGE, headers=HEADERS_COMMON, timeout=30)
@@ -123,24 +124,34 @@ def login(sess: requests.Session) -> None:
         "serial": "",
         "__RequestVerificationToken": token,
     }
+    
     headers = {
         **HEADERS_COMMON,
         "Origin": BASE_URL,
         "X-Requested-With": "XMLHttpRequest",
         "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
     }
+    
     log.info("Submitting login POST (no credentials logged).")
     r = sess.post(LOGIN_POST, data=form, headers=headers, timeout=30)
     r.raise_for_status()
-
+    
     if r.headers.get("Content-Type", "").lower().startswith("application/json"):
-        js = r.json()
-        if not js.get("page"):
-            raise RuntimeError(f"Login returned JSON but no 'page': {js}")
-    else:
-        chk = sess.get(DEVICE_INDEX, headers=HEADERS_COMMON, timeout=30, allow_redirects=True)
-        if "Log On" in chk.text or chk.status_code in (401, 403):
-            raise RuntimeError("Login appears unsuccessful (got login page again).")
+        try:
+            js = r.json()
+            
+            page_value = js.get("page", "")
+            if "Invalid User Name or Password" in page_value:
+                raise RuntimeError("Login failed: Invalid User Name or Password.")
+                        
+        except ValueError:
+            log.warning("Response Content-Type was JSON but could not parse body.")
+
+    chk = sess.get(DEVICE_INDEX, headers=HEADERS_COMMON, timeout=30, allow_redirects=True)
+    
+    if "Log On" in chk.text or chk.status_code in (401, 403):
+        raise RuntimeError("Login appears unsuccessful (got login page again).")
+
     log.info("Login successful.")
 
 

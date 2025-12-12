@@ -1,0 +1,234 @@
+import os
+from dataclasses import dataclass
+from PyQt6.QtCore import Qt, QPoint, QRect
+from PyQt6.QtGui import QAction, QIcon
+from PyQt6.QtWidgets import (
+    QWidget, QMainWindow, QLabel, QDialog, QHBoxLayout, 
+    QToolButton, QVBoxLayout, QFrame, QPushButton, QSizePolicy
+)
+
+# ---------------------------- Drag Helpers ----------------------------
+class DragRegion(QWidget):
+    def __init__(self, parent_window: QMainWindow):
+        super().__init__(parent_window)
+        self._win = parent_window
+        self._dragging = False
+        self._drag_pos = QPoint()
+        self.setMinimumWidth(40)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.setMouseTracking(True)
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self._dragging = True
+            self._drag_pos = e.globalPosition().toPoint() - self._win.frameGeometry().topLeft()
+            e.accept()
+        else:
+            super().mousePressEvent(e)
+
+    def mouseMoveEvent(self, e):
+        if self._dragging:
+            self._win.move(e.globalPosition().toPoint() - self._drag_pos)
+            e.accept()
+        else:
+            super().mouseMoveEvent(e)
+
+    def mouseReleaseEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self._dragging = False
+            e.accept()
+        else:
+            super().mouseReleaseEvent(e)
+
+class TitleDragLabel(QLabel):
+    def __init__(self, text: str, parent_window: QMainWindow):
+        super().__init__(text, parent_window)
+        self._win = parent_window
+        self._dragging = False
+        self._drag_pos = QPoint()
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setFixedHeight(36)
+        self.setObjectName("TitleLabel")
+        self.setMouseTracking(True)
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self._dragging = True
+            self._drag_pos = e.globalPosition().toPoint() - self._win.frameGeometry().topLeft()
+            e.accept()
+        else:
+            super().mousePressEvent(e)
+
+    def mouseMoveEvent(self, e):
+        if self._dragging and not self._win.isFullScreen():
+            self._win.move(e.globalPosition().toPoint() - self._drag_pos)
+            e.accept()
+        else:
+            super().mouseMoveEvent(e)
+
+    def mouseReleaseEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self._dragging = False
+            e.accept()
+        else:
+            super().mouseReleaseEvent(e)
+
+    def mouseDoubleClickEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self._dragging = False
+            if self._win.isFullScreen():
+                if hasattr(self._win, "_act_full"):
+                    self._win._act_full.setChecked(False)
+                self._win.showNormal()
+            else:
+                if hasattr(self._win, "_act_full"):
+                    self._win._act_full.setChecked(True)
+                self._win.showFullScreen()
+            e.accept()
+        else:
+            super().mouseDoubleClickEvent(e)
+
+# ---------------------------- Custom TitleBar for dialogs ----------------------------
+class DialogTitleBar(QWidget):
+    def __init__(self, window: QDialog, title: str, icon_dir: str):
+        super().__init__(window)
+        self.setObjectName("DialogTitleBar")
+        self._win = window
+        self._dragging = False
+        self._drag_pos = QPoint()
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setSpacing(6)
+
+        lbl = QLabel(title, self)
+        lbl.setObjectName("DialogTitleLabel")
+
+        btn_min = QToolButton(self); btn_min.setObjectName("DialogBtn")
+        btn_min.setIcon(QIcon(os.path.join(icon_dir, "minimize.svg"))); btn_min.setToolTip("Minimize")
+        btn_min.clicked.connect(self._win.showMinimized)
+
+        self._act_max = QAction(QIcon(os.path.join(icon_dir, "fullscreen.svg")), "Maximize", self)
+        self._act_max.setCheckable(True)
+        self._act_max.triggered.connect(self._toggle_max_restore)
+        btn_max = QToolButton(self); btn_max.setObjectName("DialogBtn")
+        btn_max.setDefaultAction(self._act_max)
+
+        btn_close = QToolButton(self); btn_close.setObjectName("DialogBtn")
+        btn_close.setIcon(QIcon(os.path.join(icon_dir, "exit.svg"))); btn_close.setToolTip("Close")
+        btn_close.clicked.connect(self._win.close)
+
+        layout.addWidget(lbl, 1, Qt.AlignmentFlag.AlignVCenter)
+        right = QHBoxLayout()
+        right.setContentsMargins(0, 0, 0, 0)
+        right.setSpacing(0)
+        box = QWidget(self); box.setLayout(right)
+        right.addWidget(btn_min); right.addWidget(btn_max); right.addWidget(btn_close)
+        layout.addWidget(box, 0)
+        self.setFixedHeight(36)
+
+    def _toggle_max_restore(self, checked: bool):
+        if checked: self._win.showMaximized()
+        else: self._win.showNormal()
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self._dragging = True
+            self._drag_pos = e.globalPosition().toPoint() - self._win.frameGeometry().topLeft()
+            e.accept()
+        else:
+            super().mousePressEvent(e)
+    def mouseMoveEvent(self, e):
+        if self._dragging:
+            self._win.move(e.globalPosition().toPoint() - self._drag_pos)
+            e.accept()
+        else:
+            super().mouseMoveEvent(e)
+    def mouseReleaseEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self._dragging = False
+            e.accept()
+        else:
+            super().mouseReleaseEvent(e)
+
+# ---------------------------- FramelessDialog base ----------------------------
+class FramelessDialog(QDialog):
+    def __init__(self, parent, title: str, icon_dir: str):
+        super().__init__(parent, flags=Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool)
+        self.setObjectName("FramelessDialogRoot")
+        self.setModal(True)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        self._titlebar = DialogTitleBar(self, title, icon_dir)
+        outer.addWidget(self._titlebar)
+        sep = QFrame(self)
+        sep.setObjectName("DialogSeparator")
+        sep.setFrameShape(QFrame.Shape.NoFrame)
+        outer.addWidget(sep)
+        self._content = QWidget(self)
+        self._content_layout = QVBoxLayout(self._content)
+        self._content_layout.setContentsMargins(12, 12, 12, 12)
+        self._content_layout.setSpacing(12)
+        outer.addWidget(self._content)
+        self.setMinimumSize(420, 220)
+
+# ---------------------------- CustomMessageBox ----------------------------
+class CustomMessageBox(FramelessDialog):
+    def __init__(self, parent, title: str, text: str, icon_dir: str, buttons: list[tuple[str, str]]):
+        super().__init__(parent, title, icon_dir)
+        lbl = QLabel(text, self._content)
+        lbl.setWordWrap(True)
+        btn_row = QHBoxLayout()
+        btn_row.addStretch(1)
+        self._clicked_role = None
+        for label, role in buttons:
+            b = QPushButton(label, self._content)
+            b.clicked.connect(lambda _=False, r=role: self._finish(r))
+            btn_row.addWidget(b)
+        self._content_layout.addWidget(lbl)
+        self._content_layout.addLayout(btn_row)
+
+    def _finish(self, role: str):
+        self._clicked_role = role
+        self.accept()
+
+    @staticmethod
+    def none(parent, title: str, text: str, icon_dir: str):
+        dlg = CustomMessageBox(parent, title, text, icon_dir, [])
+        dlg.exec()
+        return dlg._clicked_role or "ok"
+
+    @staticmethod
+    def info(parent, title: str, text: str, icon_dir: str):
+        dlg = CustomMessageBox(parent, title, text, icon_dir, [("OK", "ok")])
+        dlg.exec()
+        return dlg._clicked_role or "ok"
+
+    @staticmethod
+    def warn(parent, title: str, text: str, icon_dir: str):
+        dlg = CustomMessageBox(parent, title, text, icon_dir, [("OK", "ok")])
+        dlg.exec()
+        return dlg._clicked_role or "ok"
+
+    @staticmethod
+    def apply(parent, title: str, text: str, icon_dir: str):
+        dlg = CustomMessageBox(parent, title, text, icon_dir, [("CANCEL", "cancel"),("APPLY", "apply")])
+        dlg.exec()
+        return dlg._clicked_role or "ok"
+
+    @staticmethod
+    def confirm(parent, title: str, text: str, icon_dir: str):
+        dlg = CustomMessageBox(parent, title, text, icon_dir, [("Cancel", "cancel"), ("OK", "ok")])
+        dlg.exec()
+        return dlg._clicked_role or "cancel"
+
+@dataclass
+class ResizeState:
+    resizing: bool = False
+    edge_left: bool = False
+    edge_right: bool = False
+    edge_top: bool = False
+    edge_bottom: bool = False
+    press_pos: QPoint = QPoint()
+    press_geom: QRect = QRect()
