@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QPlainTextEdit,
     QToolBar, QSizePolicy, QToolButton, QHBoxLayout, QLabel, QMenu,
     QPushButton, QLineEdit, QComboBox, QCheckBox, QSlider, 
-    QSpinBox, QDoubleSpinBox, QFileDialog
+    QSpinBox, QDoubleSpinBox, QFileDialog, QProgressBar
 )
 
 # Imports from our new split files
@@ -24,8 +24,8 @@ from .components import (
 )
 from .highlighter import OutputHighlighter
 from .workers import BulkConfig, BulkRunner
+from pmgen.updater.updater import UpdateWorker, perform_restart, CURRENT_VERSION
 
-VERSION = "2.2.3"
 SERVICE_NAME = "PmGen"
 
 # Constants
@@ -62,7 +62,6 @@ class MainWindow(QMainWindow):
         if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
             base_dir = sys._MEIPASS
         else:
-            # Assumes this file is in pmgen/ui/
             base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
         self._icon_dir = os.path.join(base_dir, "pmgen", "assets", "icons")
 
@@ -110,12 +109,23 @@ class MainWindow(QMainWindow):
         self._bulk_thread: QThread | None = None
         self._bulk_runner = None
 
+        # --- UPDATER STATE ---
+        self._update_thread: QThread | None = None
+        self._update_worker: UpdateWorker | None = None
+        self._update_silent_mode = False
+
         # Shortcuts
         clear_shortcut = QShortcut(QKeySequence("Ctrl+L"), self)
         clear_shortcut.activated.connect(self._clear_output_window)
+        generate_shortcut = QShortcut(QKeySequence("Return"), self)
+        generate_shortcut.activated.connect(self._on_generate_clicked)
 
         self._update_auth_ui()
         QTimer.singleShot(0, self._attempt_auto_login)
+
+        # --- AUTO CHECK ON STARTUP ---
+        # We wait 1.5s so the UI loads first
+        QTimer.singleShot(1500, lambda: self._start_update_check(silent=True))
 
         self._rs = ResizeState()
 
@@ -210,11 +220,7 @@ class MainWindow(QMainWindow):
             bar.setMouseTracking(True)
             
             h = QHBoxLayout(bar)
-            # --- FIX START ---
-
             h.setContentsMargins(BORDER_WIDTH, BORDER_WIDTH, BORDER_WIDTH, 0)
-
-            
             h.setSpacing(0)
 
             # Settings Menu
@@ -264,6 +270,17 @@ class MainWindow(QMainWindow):
             drag_right = DragRegion(self)
 
             # Right Controls
+            # --- NEW UPDATE BUTTON ---
+            btn_update = QToolButton(); btn_update.setObjectName("DialogBtn")
+            # If you have an 'update.svg', use it, otherwise a text fallback or generic icon
+            icon_path = os.path.join(self._icon_dir, "update.svg") 
+            if os.path.exists(icon_path):
+                btn_update.setIcon(QIcon(icon_path))
+            else:
+                btn_update.setText("Update")
+            btn_update.setToolTip("Check for Updates")
+            btn_update.clicked.connect(lambda: self._start_update_check(silent=False))
+
             btn_min = QToolButton(); btn_min.setDefaultAction(QAction(QIcon(os.path.join(self._icon_dir, "minimize.svg")), "Min", self, triggered=self.showMinimized))
             self._act_full = QAction(QIcon(os.path.join(self._icon_dir, "fullscreen.svg")), "Max", self)
             self._act_full.setCheckable(True); self._act_full.triggered.connect(self._toggle_fullscreen)
@@ -271,6 +288,9 @@ class MainWindow(QMainWindow):
             btn_exit = QToolButton(); btn_exit.setDefaultAction(QAction(QIcon(os.path.join(self._icon_dir, "exit.svg")), "Exit", self, triggered=self._confirm_exit))
 
             right_box = QWidget(); right_l = QHBoxLayout(right_box); right_l.setContentsMargins(0,0,0,0); right_l.setSpacing(0)
+            
+            # Add update button BEFORE min/max/close
+            right_l.addWidget(btn_update)
             right_l.addWidget(btn_min); right_l.addWidget(btn_full); right_l.addWidget(btn_exit)
 
             h.addWidget(settings_btn, 0); h.addWidget(bulk_btn, 0); h.addWidget(DragRegion(self), 1)
@@ -306,6 +326,125 @@ class MainWindow(QMainWindow):
 
         h.addWidget(self._id_combo, 0); h.addWidget(self._generate_btn, 0)
         return bar
+
+    # =========================================================================
+    #  Updater Logic
+    # =========================================================================
+
+    def _reset_update_thread(self):
+            """
+            Clears the python reference to the thread so we don't 
+            accidentally access a deleted C++ object later.
+            """
+            self._update_thread = None
+            self._update_worker = None
+
+    def _start_update_check(self, silent=False):
+        """
+        silent=True: Used on startup (only notify if update FOUND).
+        silent=False: Used on button click (notify if up-to-date or error).
+        """
+        # SAFE CHECK: Ensure we don't access a deleted thread
+        if self._update_thread is not None:
+            if self._update_thread.isRunning():
+                if not silent:
+                    self.editor.appendPlainText("[Update] Check already in progress...")
+                return
+
+        self._update_silent_mode = silent
+        if not silent:
+            self.editor.appendPlainText("[Info] Checking for updates...")
+        
+        self._update_thread = QThread()
+        self._update_worker = UpdateWorker()
+        self._update_worker.moveToThread(self._update_thread)
+        
+        self._update_thread.started.connect(self._update_worker.check_updates)
+        self._update_worker.check_finished.connect(self._on_check_finished)
+        self._update_worker.error_occurred.connect(self._on_update_error)
+        self._update_worker.download_progress.connect(self._on_download_progress)
+        self._update_worker.download_finished.connect(self._on_download_complete)
+        
+        self._update_worker.check_finished.connect(self._update_thread.quit)
+        self._update_worker.error_occurred.connect(self._update_thread.quit)
+        
+        self._update_thread.finished.connect(self._update_thread.deleteLater)
+        self._update_thread.finished.connect(self._update_thread.deleteLater)
+        self._update_thread.finished.connect(self._reset_update_thread)
+        
+        self._update_thread.start()
+
+    @pyqtSlot(bool, str, str)
+    def _on_check_finished(self, found, version_tag, url):
+        self._update_thread.quit() # Stop the check thread
+        
+        if found:
+            res = CustomMessageBox.confirm(
+                self, 
+                "Update Available", 
+                f"New version {version_tag} is available.\nDo you want to update now?", 
+                self._icon_dir
+            )
+            if res == "ok":
+                self._start_download(url)
+        else:
+            if not self._update_silent_mode:
+                CustomMessageBox.info(self, "Up to Date", f"You are on the latest version ({CURRENT_VERSION}).", self._icon_dir)
+
+    @pyqtSlot(str)
+    def _on_update_error(self, msg):
+        self._update_thread.quit()
+        if not self._update_silent_mode:
+            self.editor.appendPlainText(f"[Update Error] {msg}")
+            CustomMessageBox.warn(self, "Update Error", msg, self._icon_dir)
+
+    def _start_download(self, url):
+        self.editor.appendPlainText("[Update] Starting download...")
+        
+        # We reuse the thread/worker logic but now call download
+        # We need to reconnect or restart the thread for the download phase
+        # Simpler approach: Just start a new thread for download
+        
+        self._dl_thread = QThread()
+        self._dl_worker = UpdateWorker() # New instance
+        self._dl_worker.moveToThread(self._dl_thread)
+        
+        self._dl_thread.started.connect(lambda: self._dl_worker.download_update(url))
+        self._dl_worker.download_progress.connect(self._on_download_progress)
+        self._dl_worker.download_finished.connect(self._on_download_complete)
+        self._dl_worker.error_occurred.connect(self._on_update_error)
+        
+        self._dl_worker.download_finished.connect(self._dl_thread.quit)
+        self._dl_worker.error_occurred.connect(self._dl_thread.quit)
+        self._dl_thread.finished.connect(self._dl_thread.deleteLater)
+        self._dl_thread.start()
+
+        # Create a simple progress dialog (using our FramelessDialog)
+        self._dl_dialog = FramelessDialog(self, "Downloading Update", self._icon_dir)
+        self._dl_bar = QProgressBar(self._dl_dialog)
+        self._dl_bar.setRange(0, 100)
+        self._dl_dialog._content_layout.addWidget(QLabel("Downloading...", self._dl_dialog))
+        self._dl_dialog._content_layout.addWidget(self._dl_bar)
+        self._dl_dialog.show()
+
+    @pyqtSlot(int)
+    def _on_download_progress(self, pct):
+        if hasattr(self, "_dl_bar"):
+            self._dl_bar.setValue(pct)
+
+    @pyqtSlot(str)
+    def _on_download_complete(self, new_path):
+        if hasattr(self, "_dl_dialog"):
+            self._dl_dialog.close()
+        
+        res = CustomMessageBox.info(
+            self, 
+            "Download Complete", 
+            "Update downloaded successfully.\nThe application will now restart.", 
+            self._icon_dir
+        )
+        perform_restart(new_path)
+
 
     # =========================================================================
     #  Actions & Logic
@@ -541,7 +680,7 @@ class MainWindow(QMainWindow):
     def _show_about(self):
         from pmgen.catalog.part_kit_catalog import REGISTRY
         models = sorted([k for k, v in REGISTRY.items() if v is not None])
-        txt = f"PmGen\nVersion: {VERSION}\nSupported models: {len(models)}\n—\n"
+        txt = f"PmGen\nVersion: {CURRENT_VERSION}\nSupported models: {len(models)}\n—\n"
         # Simple columns
         for i in range(0, len(models), 4): txt += "".join(s.ljust(12) for s in models[i:i+4]) + "\n"
         
