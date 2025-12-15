@@ -144,6 +144,19 @@ QComboBox#DialogInput QAbstractItemView {
     outline: 0;
 }
 
+QProgressBar#ProgressBar {
+    border: 1px solid #000000;
+    background: #1e1f22;
+    color: #e9e9e9;
+    text-align: center;
+    border-radius: 0;
+}
+
+QProgressBar#ProgressBar::chunk {
+    background-color: #44474d;
+    width: 1px; 
+}
+
 """
 
 def apply_static_theme(app: QApplication):

@@ -4,7 +4,7 @@ import requests
 from collections import deque
 from PyQt6.QtCore import (
     Qt, QSize, QPoint, QRect, QEvent, QRegularExpression, 
-    QCoreApplication, QSettings, QThread, pyqtSlot, QTimer
+    QCoreApplication, QSettings, QThread, pyqtSlot, QTimer, pyqtSignal
 )
 from PyQt6.QtGui import (
     QAction, QIcon, QCursor, QRegularExpressionValidator, QKeySequence, 
@@ -51,6 +51,9 @@ class MainWindow(QMainWindow):
     AUTH_USERNAME_KEY = "auth/username"
     HISTORY_KEY = "recent_serials"
     MAX_HISTORY = 25
+
+    sig_start_download = pyqtSignal(str)
+    sig_start_extract = pyqtSignal(str)
 
     def __init__(self):
         super().__init__()
@@ -269,17 +272,18 @@ class MainWindow(QMainWindow):
             title = TitleDragLabel("PmGen", self)
             drag_right = DragRegion(self)
 
-            # Right Controls
-            # --- NEW UPDATE BUTTON ---
             btn_update = QToolButton(); btn_update.setObjectName("DialogBtn")
-            # If you have an 'update.svg', use it, otherwise a text fallback or generic icon
             icon_path = os.path.join(self._icon_dir, "update.svg") 
             if os.path.exists(icon_path):
                 btn_update.setIcon(QIcon(icon_path))
             else:
                 btn_update.setText("Update")
+
             btn_update.setToolTip("Check for Updates")
-            btn_update.clicked.connect(lambda: self._start_update_check(silent=False))
+            if not getattr(sys, 'frozen', False):
+                btn_update.clicked.connect(lambda: CustomMessageBox.info(self, "Failed", f"You are not running a compiled version...", self._icon_dir))
+            else:                
+                btn_update.clicked.connect(lambda: self._start_update_check(silent=False))
 
             btn_min = QToolButton(); btn_min.setDefaultAction(QAction(QIcon(os.path.join(self._icon_dir, "minimize.svg")), "Min", self, triggered=self.showMinimized))
             self._act_full = QAction(QIcon(os.path.join(self._icon_dir, "fullscreen.svg")), "Max", self)
@@ -405,10 +409,11 @@ class MainWindow(QMainWindow):
         self._dl_worker = UpdateWorker()
         self._dl_worker.moveToThread(self._dl_thread)
         
-        self._dl_thread.started.connect(lambda: self._dl_worker.download_update(url))
+        self.sig_start_download.connect(self._dl_worker.download_update)
+        self.sig_start_extract.connect(self._dl_worker.extract_update)
         
-        self._dl_worker.download_progress.connect(self._on_update_progress)
-        self._dl_worker.extraction_progress.connect(self._on_update_progress)
+        self._dl_worker.download_progress.connect(self._on_download_progress)
+        self._dl_worker.extraction_progress.connect(self._on_download_progress)
         
         self._dl_worker.download_finished.connect(self._on_download_complete)
         self._dl_worker.extraction_finished.connect(self._on_extraction_complete)
@@ -417,10 +422,12 @@ class MainWindow(QMainWindow):
         self._dl_worker.extraction_finished.connect(self._dl_thread.quit)
         self._dl_worker.error_occurred.connect(self._dl_thread.quit)
         self._dl_thread.finished.connect(self._dl_thread.deleteLater)
+        
         self._dl_thread.start()
 
         self._dl_dialog = FramelessDialog(self, "Updating PmGen", self._icon_dir)
         self._dl_bar = QProgressBar(self._dl_dialog)
+        self._dl_bar.setObjectName("ProgressBar")
         self._dl_bar.setRange(0, 100)
         self._dl_bar.setValue(0)
         
@@ -431,6 +438,8 @@ class MainWindow(QMainWindow):
         self._dl_dialog._content_layout.addWidget(self._dl_bar)
         self._dl_dialog.show()
 
+        self.sig_start_download.emit(url)
+
     @pyqtSlot(int)
     def _on_download_progress(self, pct):
         """Shared slot for both download and extraction progress."""
@@ -439,13 +448,13 @@ class MainWindow(QMainWindow):
 
     @pyqtSlot(str)
     def _on_download_complete(self, zip_path):
-        """Switch UI to Extraction mode and start extraction."""
+        """Switch UI to Extraction mode and start extraction via signal."""
         if hasattr(self, "_dl_label"):
             self._dl_label.setText("Extracting Files...")
         if hasattr(self, "_dl_bar"):
             self._dl_bar.setValue(0)
             
-        self._dl_worker.extract_update(zip_path)
+        self.sig_start_extract.emit(zip_path)
 
     @pyqtSlot(str, str)
     def _on_extraction_complete(self, zip_path, extract_dir):
