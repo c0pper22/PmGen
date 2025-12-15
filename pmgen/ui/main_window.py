@@ -401,50 +401,58 @@ class MainWindow(QMainWindow):
     def _start_download(self, url):
         self.editor.appendPlainText("[Update] Starting download...")
         
-        # We reuse the thread/worker logic but now call download
-        # We need to reconnect or restart the thread for the download phase
-        # Simpler approach: Just start a new thread for download
-        
         self._dl_thread = QThread()
-        self._dl_worker = UpdateWorker() # New instance
+        self._dl_worker = UpdateWorker()
         self._dl_worker.moveToThread(self._dl_thread)
         
         self._dl_thread.started.connect(lambda: self._dl_worker.download_update(url))
-        self._dl_worker.download_progress.connect(self._on_download_progress)
+        
+        self._dl_worker.download_progress.connect(self._on_update_progress)
+        self._dl_worker.extraction_progress.connect(self._on_update_progress)
+        
         self._dl_worker.download_finished.connect(self._on_download_complete)
+        self._dl_worker.extraction_finished.connect(self._on_extraction_complete)
         self._dl_worker.error_occurred.connect(self._on_update_error)
         
-        self._dl_worker.download_finished.connect(self._dl_thread.quit)
+        self._dl_worker.extraction_finished.connect(self._dl_thread.quit)
         self._dl_worker.error_occurred.connect(self._dl_thread.quit)
         self._dl_thread.finished.connect(self._dl_thread.deleteLater)
         self._dl_thread.start()
 
-        # Create a simple progress dialog (using our FramelessDialog)
-        self._dl_dialog = FramelessDialog(self, "Downloading Update", self._icon_dir)
+        self._dl_dialog = FramelessDialog(self, "Updating PmGen", self._icon_dir)
         self._dl_bar = QProgressBar(self._dl_dialog)
         self._dl_bar.setRange(0, 100)
-        self._dl_dialog._content_layout.addWidget(QLabel("Downloading...", self._dl_dialog))
+        self._dl_bar.setValue(0)
+        
+        self._dl_label = QLabel("Downloading Update...", self._dl_dialog)
+        self._dl_label.setObjectName("DialogLabel")
+
+        self._dl_dialog._content_layout.addWidget(self._dl_label)
         self._dl_dialog._content_layout.addWidget(self._dl_bar)
         self._dl_dialog.show()
 
     @pyqtSlot(int)
     def _on_download_progress(self, pct):
+        """Shared slot for both download and extraction progress."""
         if hasattr(self, "_dl_bar"):
             self._dl_bar.setValue(pct)
 
     @pyqtSlot(str)
-    def _on_download_complete(self, new_path):
+    def _on_download_complete(self, zip_path):
+        """Switch UI to Extraction mode and start extraction."""
+        if hasattr(self, "_dl_label"):
+            self._dl_label.setText("Extracting Files...")
+        if hasattr(self, "_dl_bar"):
+            self._dl_bar.setValue(0)
+            
+        self._dl_worker.extract_update(zip_path)
+
+    @pyqtSlot(str, str)
+    def _on_extraction_complete(self, zip_path, extract_dir):
         if hasattr(self, "_dl_dialog"):
             self._dl_dialog.close()
         
-        res = CustomMessageBox.info(
-            self, 
-            "Download Complete", 
-            "Update downloaded successfully.\nThe application will now restart.", 
-            self._icon_dir
-        )
-        perform_restart(new_path)
-
+        perform_restart(zip_path, extract_dir)
 
     # =========================================================================
     #  Actions & Logic

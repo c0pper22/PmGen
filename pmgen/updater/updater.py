@@ -11,15 +11,18 @@ from PyQt6.QtCore import QObject, pyqtSignal
 # --- CONFIGURATION ---
 GITHUB_REPO = "c0pper22/PmGen"
 ASSET_NAME = "PmGen.zip" 
-CURRENT_VERSION = "2.3.3" 
+CURRENT_VERSION = "2.3.4" 
 
 class UpdateWorker(QObject):
     """
-    Runs in a background thread to check for updates without freezing the GUI.
+    Runs in a background thread to check for updates, download, and extract 
+    without freezing the GUI.
     """
     check_finished = pyqtSignal(bool, str, str) # (update_found, version_tag, download_url)
-    download_progress = pyqtSignal(int)         # (percentage)
+    download_progress = pyqtSignal(int)         # (percentage 0-100)
+    extraction_progress = pyqtSignal(int)       # (percentage 0-100)
     download_finished = pyqtSignal(str)         # (path_to_zip_file)
+    extraction_finished = pyqtSignal(str, str)  # (zip_path, extract_dir)
     error_occurred = pyqtSignal(str)            # (error_message)
 
     def check_updates(self):
@@ -73,11 +76,48 @@ class UpdateWorker(QObject):
         except Exception as e:
             self.error_occurred.emit(f"Download failed: {str(e)}")
 
-def perform_restart(zip_path):
+    def extract_update(self, zip_path):
+        """
+        Extracts the zip file file-by-file to calculate progress.
+        Runs in the background thread.
+        """
+        try:
+            temp_extract_dir = os.path.join(tempfile.gettempdir(), "pmgen_new_files")
+            
+            # Clean up any previous extraction attempts
+            if os.path.exists(temp_extract_dir):
+                try:
+                    shutil.rmtree(temp_extract_dir)
+                except OSError:
+                    pass
+            os.makedirs(temp_extract_dir, exist_ok=True)
+
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                members = zip_ref.infolist()
+                total_files = len(members)
+                
+                for i, member in enumerate(members):
+                    zip_ref.extract(member, temp_extract_dir)
+                    
+                    # Emit progress
+                    if total_files > 0:
+                        pct = int(((i + 1) / total_files) * 100)
+                        self.extraction_progress.emit(pct)
+
+            self.extraction_finished.emit(zip_path, temp_extract_dir)
+
+        except Exception as e:
+            self.error_occurred.emit(f"Extraction failed: {str(e)}")
+
+
+def perform_restart(zip_path, temp_extract_dir):
     """
-    1. Extracts the zip to a temp folder.
-    2. Creates a .bat file to handle the file swap.
-    3. Launches the .bat and kills the current app.
+    1. Creates a .bat file to handle the file swap.
+    2. Launches the .bat and kills the current app.
+    
+    Arguments:
+        zip_path (str): The path to the downloaded zip (for cleanup).
+        temp_extract_dir (str): The folder where files were extracted.
     """
     if not getattr(sys, 'frozen', False):
         print("Not running frozen (exe). Skipping self-update.")
@@ -86,22 +126,14 @@ def perform_restart(zip_path):
     current_app_dir = os.path.dirname(sys.executable)
     exe_name = os.path.basename(sys.executable)
     
-    temp_extract_dir = os.path.join(tempfile.gettempdir(), "pmgen_new_files")
-    
-    if os.path.exists(temp_extract_dir):
-        try:
-            shutil.rmtree(temp_extract_dir)
-        except OSError:
-            pass
-    os.makedirs(temp_extract_dir, exist_ok=True)
-
     try:
-        print(f"Extracting {zip_path} to {temp_extract_dir}...")
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(temp_extract_dir)
-
         bat_path = os.path.join(tempfile.gettempdir(), "pmgen_updater.bat")
         
+        # This batch script:
+        # 1. Waits 3 seconds for the app to close.
+        # 2. Copies the already extracted files from temp to the app dir.
+        # 3. Deletes the zip and the temp folder.
+        # 4. Relaunches the app.
         bat_content = f"""
 @echo off
 title Updating PmGen...
@@ -124,7 +156,7 @@ del "%~f0"
         with open(bat_path, "w") as bat_file:
             bat_file.write(bat_content)
 
-        # 4. Execute Batch and Exit
+        # Execute Batch and Exit
         print("Launching updater script and exiting...")
         subprocess.Popen([bat_path], shell=True)
         sys.exit()
