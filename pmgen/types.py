@@ -7,10 +7,11 @@ class Finding:
     canon: str
     life_used: Optional[float] = None
     due: bool = False
-    conf: float = 0.0
-    reason: str = ""
-    evidence: Dict[str, Optional[float]] = field(default_factory=dict)
-    tags: Set[str] = field(default_factory=set)
+    kit_code: str | None = None
+    qty: int = 1
+    
+    def __repr__(self):
+        return f"Finding({self.canon}, {self.life_used}, due={self.due})"
 
 @dataclass
 class Selection:

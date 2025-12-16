@@ -47,7 +47,7 @@ def _collect_all_findings(selection, show_all: bool):
             out.append(f)
             seen.add(k)
 
-    out.sort(key=lambda x: ((getattr(x, "life_used", None) or 0.0), getattr(x, "conf", 0.0)), reverse=True)
+    out.sort(key=lambda x: (getattr(x, "life_used", None) or 0.0), reverse=True)
     return out
 
 

@@ -14,7 +14,8 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QPlainTextEdit,
     QToolBar, QSizePolicy, QToolButton, QHBoxLayout, QLabel, QMenu,
     QPushButton, QLineEdit, QComboBox, QCheckBox, QSlider, 
-    QSpinBox, QDoubleSpinBox, QFileDialog, QProgressBar
+    QSpinBox, QDoubleSpinBox, QFileDialog, QProgressBar, QCompleter,
+    QTabWidget  # <--- Added QTabWidget import
 )
 
 # Imports from our new split files
@@ -78,15 +79,34 @@ class MainWindow(QMainWindow):
         app.installEventFilter(self)
         self.setMouseTracking(True)
 
-        # UI Setup
+        # --- UI SETUP START ---
         central = QWidget()
+        self.setCentralWidget(central)
+        central.setMouseTracking(True)
+        
+        # Main layout for the window
         self._vbox = QVBoxLayout(central)
         self._vbox.setContentsMargins(6, 6, 6, 6)
-        self._vbox.setSpacing(6)
+        self._vbox.setSpacing(0)
 
+        # Initialize the Tab Widget
+        self.tabs = QTabWidget()
+        self.tabs.setObjectName("MainTabs")
+        self.tabs.setDocumentMode(True)
+        self._vbox.addWidget(self.tabs)
+
+        # -- TAB 1: Home (Existing Functionality) --
+        self.tab_home = QWidget()
+        self.tab_home.setObjectName("TabHome")
+        home_layout = QVBoxLayout(self.tab_home)
+        home_layout.setContentsMargins(0, 8, 0, 0) # Top margin separates tabs from content
+        home_layout.setSpacing(6)
+
+        # Move Secondary Bar to Home Tab
         self._secondary_bar = self._build_secondary_bar()
-        self._vbox.addWidget(self._secondary_bar, 0)
+        home_layout.addWidget(self._secondary_bar, 0)
 
+        # Move Editor to Home Tab
         self.editor = QPlainTextEdit()
         self.editor.setReadOnly(True)
         self.editor.setMaximumBlockCount(2000)
@@ -94,10 +114,31 @@ class MainWindow(QMainWindow):
         self.editor.setObjectName("MainEditor")
         self.editor.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         self.editor.setMouseTracking(True)
-        self._vbox.addWidget(self.editor, 1)
+        home_layout.addWidget(self.editor, 1)
 
-        self.setCentralWidget(central)
-        self.centralWidget().setMouseTracking(True)
+        self.tabs.addTab(self.tab_home, "Home")
+
+        # -- TAB 2: Tools (New Functionality) --
+        self.tab_tools = QWidget()
+        self.tab_tools.setObjectName("TabTools")
+        tools_layout = QVBoxLayout(self.tab_tools)
+        tools_layout.setContentsMargins(0, 8, 0, 0)
+        
+        # Example content for the new tab
+        lbl_info = QLabel("New Tools Area", self.tab_tools)
+        lbl_info.setStyleSheet("color: #888; font-size: 14pt; font-weight: bold;")
+        lbl_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        btn_example = QPushButton("Example Action", self.tab_tools)
+        btn_example.setFixedWidth(150)
+        
+        tools_layout.addStretch(1)
+        tools_layout.addWidget(lbl_info)
+        tools_layout.addWidget(btn_example, 0, Qt.AlignmentFlag.AlignHCenter)
+        tools_layout.addStretch(1)
+
+        self.tabs.addTab(self.tab_tools, "Tools")
+        # --- UI SETUP END ---
 
         self.toolbar = self._build_toolbar()
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self.toolbar)
@@ -133,8 +174,12 @@ class MainWindow(QMainWindow):
         self._rs = ResizeState()
 
     # =========================================================================
-    #  Settings Management
+    #  Settings Management (UNCHANGED)
     # =========================================================================
+    
+    # ... (Rest of your class methods remain exactly the same) ...
+    # The methods below (_get_unpack_filter_enabled, UI Builders, etc.) do not need changes.
+    # Just ensure you keep the indentation correct when pasting back into your file.
 
     def _get_unpack_filter_enabled(self) -> bool:
         return bool(QSettings().value(self.BULK_UNPACK_KEY_ENABLE, False, bool))
@@ -205,10 +250,6 @@ class MainWindow(QMainWindow):
     def _set_history(self, items: list[str]):
         self._id_combo.clear()
         for it in items: self._id_combo.addItem(it)
-
-    # =========================================================================
-    #  UI Builders
-    # =========================================================================
 
     def _build_toolbar(self) -> QToolBar:
             tb = QToolBar("Window Controls", self)
@@ -316,13 +357,28 @@ class MainWindow(QMainWindow):
         h.addWidget(self._thr_label, 0, Qt.AlignmentFlag.AlignVCenter)
         h.addWidget(self._basis_label, 0, Qt.AlignmentFlag.AlignVCenter)
 
-        self._id_combo = QComboBox(bar); self._id_combo.setObjectName("IdInput")
-        self._id_combo.setEditable(True); self._id_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        self._id_combo.setMaxVisibleItems(12); self._id_combo.setMinimumWidth(200); self._id_combo.setFixedHeight(28)
-        
+        self._id_combo = QComboBox(bar)
+        self._id_combo.setObjectName("IdInput")
+        self._id_combo.setEditable(True)
+        self._id_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        # Increased max items so the list is actually useful
+        self._id_combo.setMaxVisibleItems(15) 
+        self._id_combo.setMinimumWidth(200)
+        self._id_combo.setFixedHeight(28)
+
+        # 1. Setup the LineEdit (Keep your existing validator)
         le = self._id_combo.lineEdit()
         le.setValidator(QRegularExpressionValidator(QRegularExpression(r"[A-Za-z0-9]*"), self))
         le.textChanged.connect(self._auto_capitalize)
+
+        # 2. Setup the Completer (The new part)
+        # This connects the input to the dropdown list for auto-completion
+        completer = QCompleter(self._id_combo.model(), self._id_combo)
+        completer.setFilterMode(Qt.MatchFlag.MatchContains) # Allows matching text in the middle of the string
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        completer.popup().setObjectName("IdCompleterPopup")
+        self._id_combo.setCompleter(completer)
+
         self._load_id_history()
 
         self._generate_btn = QPushButton("Generate", bar); self._generate_btn.setObjectName("GenerateBtn")
@@ -330,10 +386,6 @@ class MainWindow(QMainWindow):
 
         h.addWidget(self._id_combo, 0); h.addWidget(self._generate_btn, 0)
         return bar
-
-    # =========================================================================
-    #  Updater Logic
-    # =========================================================================
 
     def _reset_update_thread(self):
             """

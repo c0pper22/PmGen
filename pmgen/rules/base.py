@@ -1,19 +1,23 @@
 from __future__ import annotations
-from dataclasses import dataclass
-from typing import Dict, List
-from pmgen.types import PmReport, PmItem, Finding
+from dataclasses import dataclass, field
+from typing import Dict, List, Any, Optional
+from pmgen.types import PmReport, PmItem, Finding, Selection
 
 @dataclass
 class Context:
     report: PmReport
     model: str
-    counters: Dict[str, int]
     items_by_canon: Dict[str, List[PmItem]]
     threshold: float
-    life_basis: str  # 'page' or 'drive'
+    life_basis: str
+    counters: Dict[str, int] = field(default_factory=dict)
     threshold_enabled: bool = False
+    findings: Dict[str, Finding] = field(default_factory=dict)
+    kit_selection: Dict[str, int] = field(default_factory=dict)
+    meta: Dict[str, Any] = field(default_factory=dict)
 
 class RuleBase:
     name: str = "RuleBase"
-    def apply(self, ctx: Context) -> List[Finding]:
+    
+    def apply(self, ctx: Context) -> None:
         raise NotImplementedError

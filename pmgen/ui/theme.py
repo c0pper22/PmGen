@@ -42,9 +42,104 @@ QLineEdit#IdInput { background: #000000; color: #e9e9e9; border: 1px solid #0000
 QLineEdit#IdInput:focus { border: 1px solid #000000; }
 
 /* Editable combo styling for the recent-serials input */
-QComboBox#IdInput { border: 1px solid #000000; border-radius: 0; padding: 0 6px; background: #2a2c2f; color: #e9e9e9; font-weight: 800; }
-QComboBox#IdInput::drop-down { width: 0px; border: none; }
-QComboBox#IdInput QLineEdit { background: #000000; color: #e9e9e9; border: none; padding: 6px 8px; font-weight: 800; }
+QComboBox#IdInput {
+    border: 1px solid #000000;
+    border-radius: 0;
+    padding-left: 8px; /* text padding */
+    background: #202225; /* Match LineEdit background */
+    color: #e9e9e9;
+    font-weight: 800;
+    selection-background-color: #3a3d41;
+}
+
+QComboBox#IdInput QLineEdit {
+    background: transparent; /* Let parent color show through */
+    color: #e9e9e9;
+    border: none;
+    padding: 0px; /* Reset padding here, handled by parent */
+    font-weight: 800;
+}
+
+QComboBox#IdInput::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 20px; /* Give it width so we can see the arrow */
+    border-left-width: 0px;
+    border-left-color: #3a3d41;
+    border-left-style: solid; 
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+    background: #2a2c2f; /* Slightly lighter than input for contrast */
+}
+
+QComboBox#IdInput::down-arrow {
+    image: url(_internal/pmgen/assets/icons/down.svg);
+    width: 12px;
+    height: 12px;
+}
+
+QComboBox#IdInput QAbstractItemView {
+    background: #2a2c2f;       /* Dark background for the list */
+    border: 1px solid #000000; /* Border around the list */
+    color: #e9e9e9;            /* Text color */
+    selection-background-color: #3a3d41; /* Hover color */
+    selection-color: #ffffff;
+    outline: 0;
+    padding: 2px;
+}
+
+QComboBox#IdInput QAbstractItemView::item {
+    min-height: 24px;
+    padding: 4px;
+}
+
+QComboBox#IdInput QAbstractItemView QScrollBar:vertical {
+    background: #1e1f22;
+    width: 10px;
+}
+
+/* 1. The floating list container */
+QAbstractItemView#IdCompleterPopup {
+    border: 1px solid #000000;
+    background: #2a2c2f; /* Dark background */
+    color: #e9e9e9;      /* Text color */
+    selection-background-color: #3a3d41; /* Hover/Select color */
+    selection-color: #ffffff;
+    padding: 2px;
+    outline: 0;
+}
+
+/* 2. The items inside the list */
+QAbstractItemView#IdCompleterPopup::item {
+    padding: 4px 8px;
+    min-height: 24px;
+}
+
+/* 3. The Scrollbar inside the completer */
+/* We need to copy your scrollbar styles here specifically for the ID selector */
+QAbstractItemView#IdCompleterPopup QScrollBar:vertical {
+    border-left: 1px solid #000000;
+    background: #1e1f22;
+    width: 14px;
+    margin: 0px;
+}
+QAbstractItemView#IdCompleterPopup QScrollBar::handle:vertical {
+    background: #44474d;
+    min-height: 20px;
+    border: 1px solid #000000;
+    margin: 2px;
+}
+QAbstractItemView#IdCompleterPopup QScrollBar::handle:vertical:hover { 
+    background: #5f636a; 
+}
+QAbstractItemView#IdCompleterPopup QScrollBar::add-line:vertical, 
+QAbstractItemView#IdCompleterPopup QScrollBar::sub-line:vertical { 
+    height: 0px; 
+}
+QAbstractItemView#IdCompleterPopup QScrollBar::add-page:vertical, 
+QAbstractItemView#IdCompleterPopup QScrollBar::sub-page:vertical { 
+    background: none; 
+}
 
 QPushButton#GenerateBtn { padding: 6px 12px; border-radius: 0; border: 1px solid #000000; background: #2a2c2f; color: #e9e9e9; }
 QPushButton#GenerateBtn:hover { background: #33363b; }
@@ -155,6 +250,39 @@ QProgressBar#ProgressBar {
 QProgressBar#ProgressBar::chunk {
     background-color: #44474d;
     width: 1px; 
+}
+
+QTabWidget::pane { 
+    border: 1px solid #000000;
+    background: #181a1b;
+    margin-top: -1px; /* Overlap border */
+}
+
+QTabWidget::tab-bar {
+    alignment: left;
+}
+
+QTabBar::tab {
+    background: #202225;
+    color: #888888;
+    padding: 8px 20px;
+    border: 1px solid #000000;
+    border-bottom: none;
+    border-top-left-radius: 0px;
+    border-top-right-radius: 0px;
+    margin-right: 2px;
+    font-weight: 600;
+}
+
+QTabBar::tab:selected {
+    background: #2a2c2f;
+    color: #ffffff;
+    border-bottom: 1px solid #2a2c2f; /* Mask the pane border */
+}
+
+QTabBar::tab:hover:!selected {
+    background: #25272a;
+    color: #cccccc;
 }
 
 """

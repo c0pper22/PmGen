@@ -67,83 +67,33 @@ def _canon_to_kit_map_from_catalog(cat) -> Dict[str, str]:
         if not kit_code:
             continue
         for canon in canons:
-            # First one wins; if you intentionally want an override, order your PmUnits accordingly
-            mapping.setdefault(canon, kit_code)
+            mapping.setdefault(canon.strip().upper(), kit_code)
     return mapping
 
-
-def _best_life_used(items: List, basis: str) -> Optional[float]:
-    best: Optional[float] = None
-    for it in items:
-        # items are pmgen.types.PmItem
-        p = getattr(it, "page_life", None)
-        d = getattr(it, "drive_life", None)
-        used = None
-        if basis == "page":
-            used = p if isinstance(p, (int, float)) else (d if isinstance(d, (int, float)) else None)
-        elif basis == "drive":
-            used = d if isinstance(d, (int, float)) else (p if isinstance(p, (int, float)) else None)
-        else:
-            used = p if isinstance(p, (int, float)) else (d if isinstance(d, (int, float)) else None)
-        if isinstance(used, (int, float)):
-            best = used if best is None else max(best, used)
-    return best
-
-
 class KitLinkRule(RuleBase):
-    """
-    Data-driven: link DUE canons to kit codes using the model catalog.
-    No kit strings are hard-coded here — everything comes from part_kit_catalog.
-    """
     name = "KitLinkRule"
+    _CACHE = {} 
 
-    # Cache canon→kit maps by model to avoid rebuilding every run
-    _CACHE: Dict[str, Dict[str, str]] = {}
+    def _get_cached_map(self, model: str) -> Dict[str, str]:
+        if model in self._CACHE:
+            return self._CACHE[model]
+        
+        cat = _ensure_catalog_for_model(model)
+        cmap = _canon_to_kit_map_from_catalog(cat)
+        
+        self._CACHE[model] = cmap
+        return cmap
 
-    def apply(self, ctx: Context) -> List[Finding]:
-        out: List[Finding] = []
-
-        model = (ctx.model or "").strip()
-        # Build/reuse canon->kit map for this model
-        cmap = self._CACHE.get(model)
-        if cmap is None:
-            cat = _ensure_catalog_for_model(model)
-            cmap = _canon_to_kit_map_from_catalog(cat)
-            # Even if empty, cache the result to avoid repeated probing
-            self._CACHE[model] = cmap
-
+    def apply(self, ctx: Context) -> None:
+        model = ctx.model
+        cmap = self._get_cached_map(model)
         if not cmap:
-            # Nothing to do if the catalog doesn’t define any units yet
-            return out
+            return
 
-        for canon, items in (ctx.items_by_canon or {}).items():
-            if not canon:
-                continue
-
-            best_used = _best_life_used(items, ctx.life_basis)
-            if best_used is None:
-                continue
-            if not _is_due(best_used, ctx):
+        for canon, finding in ctx.findings.items():
+            if not finding.due:
                 continue
 
             kit_code = cmap.get(canon)
-            if not kit_code:
-                # Canon is due, but the catalog doesn’t (yet) tie it to a kit
-                # This will still show up in “Most-due items” from GenericLifeRule.
-                continue
-
-            # Emit a finding carrying the kit_code. Qty is per-canon here;
-            # your selection layer applies unit semantics (once per PmUnit,
-            # except drums/CST per canon).
-            f = Finding(
-                canon=canon,
-                life_used=best_used,
-                due=True,
-                conf=0.9,
-                reason=f"Catalog link: {canon} → {kit_code} (basis={ctx.life_basis}, used={best_used:.2f} ≥ thr={ctx.threshold:.2f})",
-            )
-            setattr(f, "kit_code", kit_code)
-            setattr(f, "qty", 1)
-            out.append(f)
-
-        return out
+            if kit_code:
+                setattr(finding, "kit_code", kit_code)
