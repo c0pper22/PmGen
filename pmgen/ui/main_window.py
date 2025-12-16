@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
     QToolBar, QSizePolicy, QToolButton, QHBoxLayout, QLabel, QMenu,
     QPushButton, QLineEdit, QComboBox, QCheckBox, QSlider, 
     QSpinBox, QDoubleSpinBox, QFileDialog, QProgressBar, QCompleter,
-    QTabWidget  # <--- Added QTabWidget import
+    QTabWidget
 )
 
 # Imports from our new split files
@@ -27,6 +27,9 @@ from .highlighter import OutputHighlighter
 from .workers import BulkConfig, BulkRunner
 from pmgen.updater.updater import UpdateWorker, perform_restart, CURRENT_VERSION
 
+# --- IMPORT THE NEW INVENTORY TAB ---
+from .inventory import InventoryTab
+
 SERVICE_NAME = "PmGen"
 
 # Constants
@@ -35,6 +38,7 @@ BULK_TOPN_KEY = "bulk/top_n"
 BULK_DIR_KEY  = "bulk/out_dir"
 BULK_POOL_KEY = "bulk/pool_size"
 BULK_BLACKLIST_KEY = "bulk/blacklist"
+
 
 class MainWindow(QMainWindow):
     # ---- PM settings Keys ----
@@ -99,7 +103,7 @@ class MainWindow(QMainWindow):
         self.tab_home = QWidget()
         self.tab_home.setObjectName("TabHome")
         home_layout = QVBoxLayout(self.tab_home)
-        home_layout.setContentsMargins(0, 8, 0, 0) # Top margin separates tabs from content
+        home_layout.setContentsMargins(0, 8, 0, 0)
         home_layout.setSpacing(6)
 
         # Move Secondary Bar to Home Tab
@@ -118,27 +122,9 @@ class MainWindow(QMainWindow):
 
         self.tabs.addTab(self.tab_home, "Home")
 
-        # -- TAB 2: Tools (New Functionality) --
-        self.tab_tools = QWidget()
-        self.tab_tools.setObjectName("TabTools")
-        tools_layout = QVBoxLayout(self.tab_tools)
-        tools_layout.setContentsMargins(0, 8, 0, 0)
-        
-        # Example content for the new tab
-        lbl_info = QLabel("New Tools Area", self.tab_tools)
-        lbl_info.setStyleSheet("color: #888; font-size: 14pt; font-weight: bold;")
-        lbl_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
-        btn_example = QPushButton("Example Action", self.tab_tools)
-        btn_example.setFixedWidth(150)
-        
-        tools_layout.addStretch(1)
-        tools_layout.addWidget(lbl_info)
-        tools_layout.addWidget(btn_example, 0, Qt.AlignmentFlag.AlignHCenter)
-        tools_layout.addStretch(1)
-
-        self.tabs.addTab(self.tab_tools, "Tools")
-        # --- UI SETUP END ---
+        self.tab_tools = InventoryTab(self, icon_dir=self._icon_dir)
+        self.tab_tools.setObjectName("TabInventory")
+        self.tabs.addTab(self.tab_tools, "Inventory")
 
         self.toolbar = self._build_toolbar()
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self.toolbar)
@@ -168,7 +154,6 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, self._attempt_auto_login)
 
         # --- AUTO CHECK ON STARTUP ---
-        # We wait 1.5s so the UI loads first
         QTimer.singleShot(1500, lambda: self._start_update_check(silent=True))
 
         self._rs = ResizeState()
@@ -177,10 +162,6 @@ class MainWindow(QMainWindow):
     #  Settings Management (UNCHANGED)
     # =========================================================================
     
-    # ... (Rest of your class methods remain exactly the same) ...
-    # The methods below (_get_unpack_filter_enabled, UI Builders, etc.) do not need changes.
-    # Just ensure you keep the indentation correct when pasting back into your file.
-
     def _get_unpack_filter_enabled(self) -> bool:
         return bool(QSettings().value(self.BULK_UNPACK_KEY_ENABLE, False, bool))
 

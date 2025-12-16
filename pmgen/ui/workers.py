@@ -1,6 +1,8 @@
 import os
+import traceback
 from dataclasses import dataclass
 from fnmatch import fnmatchcase
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from PyQt6.QtCore import QObject, pyqtSignal
 
 @dataclass
@@ -62,9 +64,17 @@ class BulkRunner(QObject):
 
         kept = []
         base_months = int(self._unpack_extra_months)
+        
         with pool.acquire() as sess:
             self.progress.emit(f"[Bulk] Applying unpacking date filter (+{self._unpack_extra_months} mo)…")
+            count = 0
+            total = len(serials)
+            
             for s in serials:
+                count += 1
+                if count % 10 == 0: 
+                    self.progress.emit(f"[Bulk] Checking dates... ({count}/{total})")
+                    
                 try:
                     if _sig_uses_kw:
                         d = _get_unpack(s, sess=sess)
@@ -76,7 +86,6 @@ class BulkRunner(QObject):
 
                 if not d:
                     kept.append(s)
-                    self.progress.emit(f"[Bulk] OK: {s} (no unpack date)")
                     continue
 
                 cutoff = _add_months(d, base_months)
@@ -90,9 +99,6 @@ class BulkRunner(QObject):
                         f"[Bulk] Filtered: {s} unpacked {d:%Y-%m-%d} → cutoff {cutoff:%Y-%m-%d} (>{base_months} mo{f' +{over}' if over else ''})"
                     )
                 else:
-                    self.progress.emit(
-                        f"[Bulk] OK: {s} unpacked {d:%Y-%m-%d} (cutoff {cutoff:%Y-%m-%d})"
-                    )
                     kept.append(s)
         return kept
 
@@ -102,7 +108,12 @@ class BulkRunner(QObject):
         except Exception: return "—"
 
     def run(self):
+        pool = None
         try:
+            # 1. Validation
+            if not self.cfg.out_dir or not self.cfg.out_dir.strip():
+                raise ValueError("Output directory is not set.")
+            
             from pmgen.io.http_client import SessionPool, get_serials_after_login, get_service_file_bytes
             from pmgen.parsing.parse_pm_report import parse_pm_report
             from pmgen.engine.run_rules import run_rules
@@ -114,10 +125,12 @@ class BulkRunner(QObject):
             self.progress.emit("[Info] Creating session pool...")
             pool = SessionPool(self.cfg.pool_size)
 
+            # 2. Fetch Serials
             with pool.acquire() as sess:
                 serials = get_serials_after_login(sess)
             self.progress.emit(f"[Info] Found {len(serials)} Active Serials.")
 
+            # 3. Apply Blacklist
             serials0 = list(serials or [])
             serials1 = [s for s in serials0 if not self._is_blacklisted(s)]
             skipped = len(serials0) - len(serials1)
@@ -126,17 +139,28 @@ class BulkRunner(QObject):
             if not serials1:
                 raise RuntimeError("No serials to process after applying blacklist.")
 
+            # 4. Apply Date Filter
             kept_serials = self._prefilter_by_unpack_date(serials1, pool)
             if not kept_serials:
                 raise RuntimeError("All serials were filtered out by unpack-date/cutoff logic.")
             
             self.progress.emit(f"[Info] Filtered out {len(serials) - len(kept_serials)} Serials")
-            self.progress.emit(f"[Info] Countinuing with {len(kept_serials)} Serials")
+            self.progress.emit(f"[Info] Continuing with {len(kept_serials)} Serials")
 
             thr = self.threshold
             basis = self.life_basis
             show_all = self.cfg.show_all
             thr_enabled = self.threshold_enabled
+
+            # --- HELPER FOR DATA EXTRACTION ---
+            def get_val(item, key, default=0.0):
+                """Safely get value from object attribute OR dict key"""
+                val = getattr(item, key, None)
+                if val is not None:
+                    return val
+                if isinstance(item, dict):
+                    return item.get(key, default)
+                return default
 
             def work(serial: str):
                 try:
@@ -145,8 +169,14 @@ class BulkRunner(QObject):
                     report = parse_pm_report(blob)
                     selection = run_rules(report, threshold=thr, life_basis=basis, threshold_enabled=thr_enabled)
 
-                    all_items = (getattr(selection, "meta", {}) or {}).get("all", []) or getattr(selection, "all_items", []) or []
-                    best_used = max([getattr(f, "life_used", 0.0) or 0.0 for f in all_items], default=0.0)
+                    # --- FIX START: Correctly retrieve 'all_items' from metadata ---
+                    meta = getattr(selection, "meta", {}) or {}
+                    # Try keys 'all_items' (used in run_rules.py) then 'all' (legacy fallback)
+                    all_items = meta.get("all_items", []) or meta.get("all", []) or getattr(selection, "all_items", []) or []
+                    # --- FIX END ---
+                    
+                    # Calculate best usage percentage
+                    best_used = max([float(get_val(f, "life_used", 0.0) or 0.0) for f in all_items], default=0.0)
 
                     create_pdf_report(
                         report=report,
@@ -158,7 +188,6 @@ class BulkRunner(QObject):
                         threshold_enabled=thr_enabled
                     )
 
-                    meta = getattr(selection, "meta", {}) or {}
                     return {
                         "serial": (report.headers or {}).get("serial") or serial,
                         "model": (report.headers or {}).get("model")  or "Unknown",
@@ -170,11 +199,10 @@ class BulkRunner(QObject):
                         "due_sources": meta.get("due_sources", {}) or {},
                     }
                 except Exception as e:
-                    import traceback
                     return {"serial": serial, "error": str(e), "trace": traceback.format_exc()}
 
+            # 5. Execute Thread Pool
             results = []
-            from concurrent.futures import ThreadPoolExecutor, as_completed
             with ThreadPoolExecutor(max_workers=self.cfg.pool_size) as ex:
                 futures = {ex.submit(work, s): s for s in kept_serials}
                 for fut in as_completed(futures):
@@ -184,28 +212,37 @@ class BulkRunner(QObject):
                         if "error" in res:
                             self.progress.emit(f"[Bulk] {s}: ERROR — {res['error']}")
                         else:
+                            # Log percentage to confirm valid data is being read
                             self.progress.emit(f"[Bulk] {s}: OK — {self._fmt_pct(res['best_used'])}")
                         results.append(res)
                     except Exception as e:
-                        self.progress.emit(f"[Bulk] {s}: ERROR — {e}")
+                        self.progress.emit(f"[Bulk] {s}: CRITICAL — {e}")
 
+            # 6. Final Summary
             ok = [r for r in results if "error" not in r]
             ok.sort(key=lambda r: (r.get("best_used") or 0.0), reverse=True)
             top = ok[: self.cfg.top_n]
 
             self.progress.emit(f"[Info] Wrote {len(top)} report files to: {self.cfg.out_dir}")
 
-            pdf_path = write_final_summary_pdf(
-                out_dir=self.cfg.out_dir,
-                results=results,
-                top=top,
-                thr=thr,
-                basis=basis,
-                filename="Final_Summary.pdf",
-                threshold_enabled=thr_enabled
-            )
+            try:
+                pdf_path = write_final_summary_pdf(
+                    out_dir=self.cfg.out_dir,
+                    results=results, 
+                    top=top,
+                    thr=thr,
+                    basis=basis,
+                    filename="Final_Summary.pdf",
+                    threshold_enabled=thr_enabled
+                )
+                self.finished.emit(f"[Info] Complete. Summary written to: {pdf_path}")
+            except Exception as e:
+                self.finished.emit(f"[Info] Reports generated, but Summary PDF failed: {e}")
 
-            pool.close()
-            self.finished.emit(f"[Info] Complete. Summary written to: {pdf_path}")
         except Exception as e:
             self.finished.emit(f"[Info] Failed: {e}")
+            traceback.print_exc()
+        finally:
+            if pool:
+                try: pool.close()
+                except: pass

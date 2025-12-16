@@ -12,13 +12,15 @@ from pmgen.rules.kit_link import KitLinkRule
 from pmgen.rules.grouping import UnitGroupingRule
 from pmgen.rules.qty_override import QtyOverrideRule
 from pmgen.rules.ribon_expansion import RibonExpansionRule
+from pmgen.rules.inventory_check import InventoryCheckRule
 
 PIPELINE = [
     GenericLifeRule(),    # 1. Calc Life & Due status
     KitLinkRule(),        # 2. Add Kit Codes
     UnitGroupingRule(),   # 3. Group by Unit Logic (Drum/Feed Rolls)
     QtyOverrideRule(),    # 4. Apply Hard Overrides
-    RibonExpansionRule(), # 5. Resolve Part #
+    InventoryCheckRule(), # 5. Inventory Check 
+    RibonExpansionRule(), # 6. Resolve Part #
 ]
 
 def build_context(

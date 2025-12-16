@@ -20,3 +20,5 @@ urllib3==2.5.0
 pyinstaller==6.16.0
 pyinstaller-hooks-contrib==2025.9
 reportlab==4.4.4
+numpy==2.3.5
+pandas==2.3.3

@@ -285,6 +285,39 @@ QTabBar::tab:hover:!selected {
     color: #cccccc;
 }
 
+QTableView {
+    background-color: #1e1f22; 
+    color: #e9e9e9;
+    border: 1px solid #000000;
+    gridline-color: #2a2c2f;
+    selection-background-color: #3a3d41;
+    selection-color: #ffffff;
+    alternate-background-color: #232529;
+}
+QHeaderView::section {
+    background-color: #202225;
+    color: #e9e9e9;
+    padding: 6px;
+    border: 1px solid #000000;
+    font-weight: bold;
+}
+QTableCornerButton::section {
+    background-color: #202225;
+    border: 1px solid #000000;
+}
+
+QTableView 
+{ 
+    border: 1px solid #333; 
+    gridline-color: #444; 
+}
+QHeaderView::section 
+{ 
+    background-color: #2d2d2d; 
+    padding: 4px; 
+    border: none; 
+    font-weight: bold;
+}
 """
 
 def apply_static_theme(app: QApplication):
