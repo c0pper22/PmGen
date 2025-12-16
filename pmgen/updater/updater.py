@@ -11,7 +11,7 @@ from PyQt6.QtCore import QObject, pyqtSignal
 # --- CONFIGURATION ---
 GITHUB_REPO = "c0pper22/PmGen"
 ASSET_NAME = "PmGen.zip" 
-CURRENT_VERSION = "2.5.0" 
+CURRENT_VERSION = "2.5.1" 
 
 class UpdateWorker(QObject):
     """
