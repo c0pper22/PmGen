@@ -157,10 +157,14 @@ def write_final_summary_pdf(
         kit_by_pn = r.get("kit_by_pn") or {}
         due_src   = r.get("due_sources") or {}
         inv_matches = r.get("inventory_matches") or []
-        inv_missing = r.get("inventory_missing") or [] # <--- NEW
+        inv_missing = r.get("inventory_missing") or []
 
         over_100_kits  = set((due_src.get("over_100") or []))
         threshold_kits = set((due_src.get("threshold") or []))
+
+        if not threshold_enabled:
+            threshold_kits = set()
+
         threshold_only = threshold_kits - over_100_kits
 
         rows_over: list = []

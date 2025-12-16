@@ -125,6 +125,10 @@ def format_report(
 
     over_100_kits    = set(due_src.get("over_100", []) or [])
     threshold_kits   = set(due_src.get("threshold", []) or [])
+
+    if not threshold_enabled:
+        threshold_kits = set()
+
     threshold_only   = threshold_kits - over_100_kits
 
     over_rows: List[str] = []
@@ -272,7 +276,7 @@ def create_pdf_report(
             not_due_items = list(selection.not_due)
         else:
             meta = getattr(selection, "meta", {}) or {}
-            all_items = meta.get("all", []) or []
+            all_items = meta.get("all_items", []) or []
             not_due_items = [f for f in all_items if not getattr(f, "due", False)]
 
     combined = due_items + not_due_items if show_all else due_items
@@ -291,11 +295,13 @@ def create_pdf_report(
     flat    = meta.get("selection_pn", {}) or {}
     by_pn   = meta.get("kit_by_pn", {}) or {}
     due_src = meta.get("due_sources", {}) or {}
-    inv_matches = meta.get("inventory_matches", []) or []
-    inv_missing = meta.get("inventory_missing", []) or [] # <--- NEW
 
     over_100_kits  = set(due_src.get("over_100", []) or [])
     threshold_kits = set(due_src.get("threshold", []) or [])
+
+    if not threshold_enabled:
+        threshold_kits = set()
+
     threshold_only = threshold_kits - over_100_kits
 
     final_over: List[List[Any]] = []
@@ -386,45 +392,6 @@ def create_pdf_report(
             story.append(KeepTogether(tbl))
         else: story.append(Paragraph("(none)", styles["Meta"]))
         
-    # --- INVENTORY: MATCHES ---
-    if inv_matches:
-        story.append(Spacer(1, 4))
-        story.append(Paragraph("Inventory Matches (In Stock)", styles["InvHeader"]))
-        story.append(_hline(color=colors.HexColor("#86EFAC")))
-        
-        idata = [["Matched Item", "Needed", "In Stock"]]
-        for m in inv_matches:
-            idata.append([m["code"], str(m["needed"]), str(int(m["in_stock"]))])
-            
-        itbl = Table(idata, colWidths=[3.6 * inch, 1.5 * inch, 1.5 * inch])
-        istyle = _tbl_style_base()
-        istyle.add("BACKGROUND", (0,0), (-1,0), colors.HexColor("#22C55E"))
-        istyle.add("ALIGN", (1,1), (-1,-1), "CENTER")
-        itbl.setStyle(istyle)
-        _zebra(itbl, len(idata))
-        story.append(KeepTogether(itbl))
-
-    # --- INVENTORY: MISSING (ORDER LIST) ---
-    if inv_missing:
-        story.append(Spacer(1, 4))
-        story.append(Paragraph("Items to Order (Missing from Stock)", styles["MissHeader"]))
-        story.append(_hline(color=colors.HexColor("#FCA5A5")))
-        
-        mdata = [["Item Code", "Qty to Order"]]
-        for m in inv_missing:
-            note = m.get("note", "")
-            qty_str = str(int(m["ordering"]))
-            if note: qty_str += f" ({note})"
-            mdata.append([m["code"], qty_str])
-            
-        mtbl = Table(mdata, colWidths=[5.1 * inch, 1.5 * inch])
-        mstyle = _tbl_style_base()
-        mstyle.add("BACKGROUND", (0,0), (-1,0), colors.HexColor("#EF4444")) # Red Header
-        mstyle.add("ALIGN", (1,1), (-1,-1), "CENTER")
-        mtbl.setStyle(mstyle)
-        _zebra(mtbl, len(mdata))
-        story.append(KeepTogether(mtbl))
-
     doc.build(story)
 
 
