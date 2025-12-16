@@ -250,156 +250,182 @@ def _zebra(tbl, rows):
         if r % 2 == 0:
             tbl.setStyle(TableStyle([("BACKGROUND", (0, r), (-1, r), colors.HexColor("#F8FAFC"))]))
 
-ef create_pdf_report(
-    report, 
-    selection, 
-    threshold: float, 
-    life_basis: str, 
-    show_all: bool, 
-    out_dir: str, 
-    threshold_enabled: bool = True
+def create_pdf_report(
+    *, report, selection, threshold: float, life_basis: str,
+    show_all: bool = False, out_dir: str = ".", threshold_enabled: bool = True,
 ):
-    """
-    Generates the individual PDF report for a single machine.
-    """
-    headers = report.headers or {}
-    serial = headers.get("serial", "Unknown")
-    model = headers.get("model", "Unknown")
-    date_str = headers.get("date", "Unknown")
+    hdrs = getattr(report, "headers", {}) or {}
+    model = hdrs.get("model", "Unknown")
+    serial = hdrs.get("serial", "Unknown")
+    dt_raw = hdrs.get("date")
+    dt_str = dt_raw if isinstance(dt_raw, str) and dt_raw.strip() else datetime.now().strftime("%m-%d-%Y %H:%M")
 
-    filename = f"{threshold}_{serial}.pdf" 
-    # Or keep your naming convention: f"{model}_{serial}.pdf" etc.
-    # We'll stick to a safe default:
-    safe_model = "".join([c for c in model if c.isalnum() or c in (' ','-','_')]).strip()
-    filename = f"{safe_model}_{serial}.pdf"
+    # Counters
+    c = getattr(report, "counters", {}) or {}
+    parts = [f"{k.title()}: {v}" for k, v in c.items() if v is not None]
 
-    filepath = os.path.join(out_dir, filename)
+    # Due items
+    due_items = list(getattr(selection, "items", []) or [])
+    not_due_items = []
+    if show_all:
+        if hasattr(selection, "not_due") and selection.not_due:
+            not_due_items = list(selection.not_due)
+        else:
+            meta = getattr(selection, "meta", {}) or {}
+            all_items = meta.get("all", []) or []
+            not_due_items = [f for f in all_items if not getattr(f, "due", False)]
 
-    doc = SimpleDocTemplate(
-        filepath, 
-        pagesize=LETTER,
-        rightMargin=0.5*inch, leftMargin=0.5*inch,
-        topMargin=0.5*inch, bottomMargin=0.5*inch
-    )
+    combined = due_items + not_due_items if show_all else due_items
+    combined.sort(key=lambda x: (getattr(x, "life_used", None) or 0.0), reverse=True)
+
+    most_due = []
+    for f in combined:
+        canon = getattr(f, "canon", "—")
+        pct = (getattr(f, "life_used", None) or 0.0) * 100.0
+        kit = getattr(f, "kit_code", None) or "(N/A)"
+        most_due.append([canon, f"{pct:.1f}%", "DUE" if getattr(f, "due", False) else "", kit])
+
+    # Final parts
+    meta = getattr(selection, "meta", {}) or {}
+    grouped = meta.get("selection_pn_grouped", {}) or {}
+    flat    = meta.get("selection_pn", {}) or {}
+    by_pn   = meta.get("kit_by_pn", {}) or {}
+    due_src = meta.get("due_sources", {}) or {}
+    inv_matches = meta.get("inventory_matches", []) or []
+    inv_missing = meta.get("inventory_missing", []) or [] # <--- NEW
+
+    over_100_kits  = set(due_src.get("over_100", []) or [])
+    threshold_kits = set(due_src.get("threshold", []) or [])
+    threshold_only = threshold_kits - over_100_kits
+
+    final_over: List[List[Any]] = []
+    final_thr: List[List[Any]] = []
+
+    if grouped:
+        for unit, pns in grouped.items():
+            if unit in over_100_kits:
+                for pn, qty in (pns or {}).items(): final_over.append([int(qty), pn, unit])
+            elif unit in threshold_only:
+                for pn, qty in (pns or {}).items(): final_thr.append([int(qty), pn, unit])
+    elif flat:
+        for pn, qty in flat.items():
+            unit = by_pn.get(pn, "UNKNOWN-UNIT")
+            if unit in over_100_kits: final_over.append([int(qty), pn, unit])
+            elif unit in threshold_only: final_thr.append([int(qty), pn, unit])
+
+    # Build PDF
+    best_used_pct = (max((getattr(f, "life_used", None) or 0.0) for f in combined) * 100.0) if combined else 0.0
+    fname = f"{best_used_pct:.1f}_{serial}.pdf"
+
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, fname)
+    doc = SimpleDocTemplate(path, pagesize=LETTER, leftMargin=0.5 * inch, rightMargin=0.5 * inch, topMargin=0.5 * inch, bottomMargin=0.5 * inch)
 
     styles = getSampleStyleSheet()
-    styles.add(ParagraphStyle(name='Small', parent=styles['Normal'], fontSize=9, leading=11))
-    styles.add(ParagraphStyle(name='HeaderInfo', parent=styles['Normal'], fontSize=10, leading=12, spaceAfter=6))
-    styles.add(ParagraphStyle(name='MissHeader', parent=styles['Normal'], fontSize=10, fontName='Helvetica-Bold', textColor=colors.red))
+    styles.add(ParagraphStyle(name="H1", fontName="Helvetica-Bold", fontSize=14, leading=16, textColor=colors.HexColor("#111827"), spaceBefore=0, spaceAfter=2))
+    styles.add(ParagraphStyle(name="Meta", fontName="Helvetica", fontSize=9, leading=10, textColor=colors.HexColor("#374151"), spaceBefore=0, spaceAfter=2))
+    styles.add(ParagraphStyle(name="Section", fontName="Helvetica-Bold", fontSize=11, leading=12, textColor=colors.HexColor("#111827"), spaceBefore=4, spaceAfter=2))
+    # Green Style for Inventory Matches
+    styles.add(ParagraphStyle(name="InvHeader", parent=styles["Section"], textColor=colors.HexColor("#166534")))
+    # Red Style for Inventory Missing
+    styles.add(ParagraphStyle(name="MissHeader", parent=styles["Section"], textColor=colors.HexColor("#DC2626")))
 
     story = []
+    story.append(Paragraph(f"Model: {model}  |  Serial: {serial}  |  Date: {dt_str}", styles["H1"]))
+    story.append(_hline())
+    thr_text = f"{threshold*100:.1f}%" if threshold_enabled else "100.0%"
+    story.append(Paragraph(f"Due threshold: {thr_text}  •  Basis: {life_basis.upper()}", styles["Meta"]))
+    if parts: story.append(Paragraph("Counters: " + "  ".join(parts), styles["Meta"]))
+    story.append(Spacer(1, 4))
 
-    # --- HEADER ---
-    story.append(Paragraph(f"<b>PM Report:</b> {model}", styles["Title"]))
-    info_txt = f"<b>Serial:</b> {serial} &nbsp;|&nbsp; <b>Date:</b> {date_str}"
-    story.append(Paragraph(info_txt, styles["HeaderInfo"]))
+    # Most-Due Items
+    if most_due:
+        data = [["Canon", "Life Used", "Status", "Unit"]] + most_due
+        tbl = Table(data, colWidths=[2.8 * inch, 0.95 * inch, 0.8 * inch, 2.05 * inch])
+        tbl.setStyle(_tbl_style_base())
+        tbl.setStyle(TableStyle([("ALIGN", (1, 1), (1, -1), "RIGHT"), ("ALIGN", (2, 1), (2, -1), "CENTER")]))
+        _zebra(tbl, len(data))
+        for r_idx in range(1, len(data)):
+            try:
+                val = float(most_due[r_idx - 1][1].strip("%"))
+                tbl.setStyle(TableStyle([("TEXTCOLOR", (1, r_idx), (1, r_idx), _pct_color(val))]))
+            except Exception: pass
+        tbl.splitByRow = 1
+        tbl.repeatRows = 1
+        story.append(tbl)
+    else: story.append(Paragraph("(none)", styles["Meta"]))
+    story.append(Spacer(1, 4))
 
-    thr_txt = f"{threshold}%" if threshold_enabled else "Disabled"
-    mode_txt = f"<b>Threshold:</b> {thr_txt} &nbsp;|&nbsp; <b>Basis:</b> {life_basis}"
-    if show_all:
-        mode_txt += " &nbsp;|&nbsp; <b>(Show All Active)</b>"
-    story.append(Paragraph(mode_txt, styles["HeaderInfo"]))
+    # Final Parts — Over 100%
+    story.append(Paragraph("Final Parts — Over 100%", styles["Section"]))
+    story.append(_hline())
+    if final_over:
+        data = [["Qty", "Part Number", "Unit"]] + [[str(q), pn, u] for q, pn, u in final_over]
+        tbl = Table(data, colWidths=[0.6 * inch, 3.0 * inch, 3.0 * inch])
+        tbl.setStyle(_tbl_style_base())
+        tbl.setStyle(TableStyle([("ALIGN", (0, 1), (0, -1), "RIGHT")]))
+        _zebra(tbl, len(data))
+        tbl.splitByRow = 1
+        tbl.repeatRows = 1
+        story.append(KeepTogether(tbl))
+    else: story.append(Paragraph("(none)", styles["Meta"]))
+    story.append(Spacer(1, 4))
 
-    story.append(Spacer(1, 0.2 * inch))
-
-    # --- GET ITEMS ---
-    # THIS IS THE KEY FIX: Using the collector helper logic
-    items_to_show = _collect_all_findings(selection, show_all)
-
-    # Sort items: Due items first, then by usage descending
-    def sort_key(x):
-        is_due = getattr(x, "due", False)
-        # Use helper to get life_used safely
-        used = getattr(x, "life_used", 0.0)
-        if used is None: used = 0.0
-        return (not is_due, -float(used)) # True(not due) comes after False(due), then desc usage
-    
-    items_to_show.sort(key=sort_key)
-
-    # --- BUILD TABLE ---
-    if not items_to_show:
-        story.append(Paragraph("(No items to display)", styles["Normal"]))
-    else:
-        # Columns: Qty | Part Number | Description | Life Used | Status
-        table_data = [["Qty", "Part Number", "Description", "Life", "Status"]]
+    # Final Parts — Threshold
+    if final_thr:
+        story.append(Paragraph("Final Parts — Threshold", styles["Section"]))
+        story.append(_hline())
+        if final_thr:
+            data = [["Qty", "Part Number", "Unit"]] + [[str(q), pn, u] for q, pn, u in final_thr]
+            tbl = Table(data, colWidths=[0.6 * inch, 3.0 * inch, 3.0 * inch])
+            tbl.setStyle(_tbl_style_base())
+            tbl.setStyle(TableStyle([("ALIGN", (0, 1), (0, -1), "RIGHT")]))
+            _zebra(tbl, len(data))
+            tbl.splitByRow = 1
+            tbl.repeatRows = 1
+            story.append(KeepTogether(tbl))
+        else: story.append(Paragraph("(none)", styles["Meta"]))
         
-        row_styles = []
+    # --- INVENTORY: MATCHES ---
+    if inv_matches:
+        story.append(Spacer(1, 4))
+        story.append(Paragraph("Inventory Matches (In Stock)", styles["InvHeader"]))
+        story.append(_hline(color=colors.HexColor("#86EFAC")))
         
-        for i, item in enumerate(items_to_show):
-            # Extract basic data
-            qty = getattr(item, "qty", 1)
-            pn = getattr(item, "kit_code", "") or getattr(item, "part_number", "") or "N/A"
-            desc = getattr(item, "description", "") or getattr(item, "desc", "") or ""
+        idata = [["Matched Item", "Needed", "In Stock"]]
+        for m in inv_matches:
+            idata.append([m["code"], str(m["needed"]), str(int(m["in_stock"]))])
             
-            # Life Percentage
-            used = getattr(item, "life_used", 0.0)
-            if used is None: used = 0.0
-            pct_str = f"{used*100:.1f}%"
-            
-            # Status
-            is_due = getattr(item, "due", False)
-            status = "DUE" if is_due else "OK"
-            
-            # Check Threshold for "OK" items (to see if they are close)
-            # If show_all is on, we might want to highlight items that are 0% differently from 40%
-            
-            table_data.append([str(qty), pn, desc, pct_str, status])
+        itbl = Table(idata, colWidths=[3.6 * inch, 1.5 * inch, 1.5 * inch])
+        istyle = _tbl_style_base()
+        istyle.add("BACKGROUND", (0,0), (-1,0), colors.HexColor("#22C55E"))
+        istyle.add("ALIGN", (1,1), (-1,-1), "CENTER")
+        itbl.setStyle(istyle)
+        _zebra(itbl, len(idata))
+        story.append(KeepTogether(itbl))
 
-            # Styling the row
-            row_idx = i + 1
-            if is_due:
-                # Bold red for due items
-                row_styles.append(('FONTNAME', (0, row_idx), (-1, row_idx), 'Helvetica-Bold'))
-                row_styles.append(('TEXTCOLOR', (3, row_idx), (4, row_idx), colors.red))
-            else:
-                # Grey text for "Show All" items that aren't due
-                row_styles.append(('TEXTCOLOR', (0, row_idx), (-1, row_idx), colors.darkgrey))
-
-        # Create Table
-        t = Table(table_data, colWidths=[0.6*inch, 1.5*inch, 3.2*inch, 0.8*inch, 0.8*inch])
-        
-        # Base Style
-        t_style = TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('ALIGN', (0, 0), (0, -1), 'CENTER'), # Qty center
-            ('ALIGN', (3, 0), (-1, -1), 'CENTER'), # Life/Status center
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-        ])
-        
-        # Add dynamic row styles
-        for s in row_styles:
-            t_style.add(*s)
-            
-        t.setStyle(t_style)
-        story.append(t)
-
-    # --- INVENTORY MISSING SECTION ---
-    # (If your rules populated the inventory missing meta)
-    meta = getattr(selection, "meta", {}) or {}
-    inv_missing = meta.get("inventory_missing")
-    
+    # --- INVENTORY: MISSING (ORDER LIST) ---
     if inv_missing:
-        story.append(Spacer(1, 0.25 * inch))
-        story.append(Paragraph("Inventory Missing / To Order", styles["MissHeader"]))
+        story.append(Spacer(1, 4))
+        story.append(Paragraph("Items to Order (Missing from Stock)", styles["MissHeader"]))
+        story.append(_hline(color=colors.HexColor("#FCA5A5")))
         
-        m_data = [["Code", "Needed", "Order Qty"]]
+        mdata = [["Item Code", "Qty to Order"]]
         for m in inv_missing:
-            m_data.append([
-                m.get("code", "?"), 
-                str(m.get("needed", 0)), 
-                str(m.get("ordering", 0))
-            ])
+            note = m.get("note", "")
+            qty_str = str(int(m["ordering"]))
+            if note: qty_str += f" ({note})"
+            mdata.append([m["code"], qty_str])
             
-        m_table = Table(m_data, colWidths=[3.0*inch, 1.0*inch, 1.0*inch])
-        m_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#FCA5A5")),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-        ]))
-        story.append(m_table)
+        mtbl = Table(mdata, colWidths=[5.1 * inch, 1.5 * inch])
+        mstyle = _tbl_style_base()
+        mstyle.add("BACKGROUND", (0,0), (-1,0), colors.HexColor("#EF4444")) # Red Header
+        mstyle.add("ALIGN", (1,1), (-1,-1), "CENTER")
+        mtbl.setStyle(mstyle)
+        _zebra(mtbl, len(mdata))
+        story.append(KeepTogether(mtbl))
 
     doc.build(story)
-    return filepath
 
 
 def generate_from_bytes(
