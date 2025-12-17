@@ -577,13 +577,28 @@ class MainWindow(QMainWindow):
 
         if self._bulk_thread and self._bulk_thread.isRunning():
             self._log_queue.append("[Info] A run is already active."); return
+        
+        # Read Settings
+        s = QSettings()
+        # Max Age (Older than...)
+        unpack_max_enabled = bool(s.value("bulk/unpack_filter_enabled", False, bool))
+        unpack_max_months = int(s.value("bulk/unpack_extra_months", 0, int))
+        
+        # Min Age (Newer than...)
+        unpack_min_enabled = bool(s.value("bulk/unpack_min_filter_enabled", False, bool))
+        unpack_min_months = int(s.value("bulk/unpack_min_months", 0, int))
 
         self._bulk_thread = QThread(self)
         self._bulk_runner = BulkRunner(
-            cfg, threshold=self._get_threshold(), life_basis=self._get_life_basis(),
+            cfg, 
+            threshold=self._get_threshold(), 
+            life_basis=self._get_life_basis(),
             threshold_enabled=self._get_threshold_enabled(),
-            unpack_filter_enabled=self._get_unpack_filter_enabled(),
-            unpack_extra_months=self._get_unpack_extra_months(),
+            # Pass both filters
+            unpack_max_enabled=unpack_max_enabled,
+            unpack_max_months=unpack_max_months,
+            unpack_min_enabled=unpack_min_enabled,
+            unpack_min_months=unpack_min_months,
         )
         self._bulk_runner.moveToThread(self._bulk_thread)
         self._bulk_thread.started.connect(self._bulk_runner.run)
@@ -697,33 +712,70 @@ class MainWindow(QMainWindow):
         dlg = FramelessDialog(self, "Bulk Settings", self._icon_dir)
 
         # Build UI rows manually to save vertical space
-        def _row(label, widget): r = QHBoxLayout(); r.addWidget(QLabel(label, dlg)); r.addStretch(1); r.addWidget(widget); return r
+        def _row(label, widget): 
+            r = QHBoxLayout()
+            r.addWidget(QLabel(label, dlg))
+            r.addStretch(1)
+            r.addWidget(widget)
+            return r
         
+        # --- Standard Config ---
         sp_top = QSpinBox(dlg); sp_top.setObjectName("DialogInput"); sp_top.setRange(1, 9999); sp_top.setValue(cfg.top_n)
         sp_pool = QSpinBox(dlg); sp_pool.setObjectName("DialogInput"); sp_pool.setRange(1, 16); sp_pool.setValue(cfg.pool_size)
         ed_dir = QLineEdit(cfg.out_dir, dlg); ed_dir.setObjectName("DialogInput")
         btn_br = QPushButton("Browse", dlg); btn_br.clicked.connect(lambda: ed_dir.setText(QFileDialog.getExistingDirectory(self, "Out", cfg.out_dir) or cfg.out_dir))
         
-        bl_edit = QPlainTextEdit(dlg); bl_edit.setObjectName("MainEditor"); bl_edit.setFixedHeight(80); bl_edit.setPlainText("\n".join(cfg.blacklist or []))
+        bl_edit = QPlainTextEdit(dlg); bl_edit.setObjectName("MainEditor"); bl_edit.setFixedHeight(60)
+        bl_edit.setPlainText("\n".join(cfg.blacklist or []))
         
-        cb_unpack = QCheckBox("Enable unpacking date filter", dlg); cb_unpack.setObjectName("DialogCheckbox")
-        cb_unpack.setChecked(bool(s.value("bulk/unpack_filter_enabled", False, bool)))
-        sp_extra = QSpinBox(dlg); sp_extra.setObjectName("DialogInput"); sp_extra.setRange(0, 120); sp_extra.setValue(int(s.value("bulk/unpack_extra_months", 0, int)))
+        # --- Date Filters (Max Age / Min Age) ---
+        
+        # 1. Max Age (Existing: "Unpack Filter")
+        cb_max_age = QCheckBox("Exclude if OLDER than (Months):", dlg); cb_max_age.setObjectName("DialogCheckbox")
+        cb_max_age.setChecked(bool(s.value("bulk/unpack_filter_enabled", False, bool)))
+        sp_max_age = QSpinBox(dlg); sp_max_age.setObjectName("DialogInput"); sp_max_age.setRange(0, 120)
+        sp_max_age.setValue(int(s.value("bulk/unpack_extra_months", 0, int))) # Reusing existing key
+        
+        # 2. Min Age (New)
+        cb_min_age = QCheckBox("Exclude if NEWER than (Months):", dlg); cb_min_age.setObjectName("DialogCheckbox")
+        cb_min_age.setChecked(bool(s.value("bulk/unpack_min_filter_enabled", False, bool)))
+        sp_min_age = QSpinBox(dlg); sp_min_age.setObjectName("DialogInput"); sp_min_age.setRange(0, 120)
+        sp_min_age.setValue(int(s.value("bulk/unpack_min_months", 0, int)))
+
+        # Logic to disable spinboxes if checkbox is off
+        cb_max_age.toggled.connect(sp_max_age.setEnabled)
+        cb_min_age.toggled.connect(sp_min_age.setEnabled)
+        sp_max_age.setEnabled(cb_max_age.isChecked())
+        sp_min_age.setEnabled(cb_min_age.isChecked())
 
         btn_save = QPushButton("Save", dlg)
         def _save():
             bl = [l.strip().upper() for l in re.split(r"[\n,]+", bl_edit.toPlainText()) if l.strip()]
             self._save_bulk_config(BulkConfig(sp_top.value(), ed_dir.text().strip(), sp_pool.value(), bl))
-            s.setValue("bulk/unpack_filter_enabled", cb_unpack.isChecked())
-            s.setValue("bulk/unpack_extra_months", sp_extra.value())
+            
+            # Save Max Age (Existing keys)
+            s.setValue("bulk/unpack_filter_enabled", cb_max_age.isChecked())
+            s.setValue("bulk/unpack_extra_months", sp_max_age.value())
+            
+            # Save Min Age (New keys)
+            s.setValue("bulk/unpack_min_filter_enabled", cb_min_age.isChecked())
+            s.setValue("bulk/unpack_min_months", sp_min_age.value())
+            
             dlg.accept()
         btn_save.clicked.connect(_save)
 
         l = dlg._content_layout
-        l.addLayout(_row("Top N serials:", sp_top)); l.addLayout(_row("Parallel workers:", sp_pool))
+        l.addLayout(_row("Top N serials:", sp_top))
+        l.addLayout(_row("Parallel workers:", sp_pool))
+        
         r_dir = QHBoxLayout(); r_dir.addWidget(QLabel("Out Dir:", dlg)); r_dir.addWidget(ed_dir, 1); r_dir.addWidget(btn_br); l.addLayout(r_dir)
+        
         l.addWidget(QLabel("Blacklist:", dlg)); l.addWidget(bl_edit)
-        r_pk = QHBoxLayout(); r_pk.addWidget(cb_unpack); r_pk.addStretch(1); r_pk.addWidget(QLabel("+Months:", dlg)); r_pk.addWidget(sp_extra); l.addLayout(r_pk)
+        
+        # Add the two filter rows
+        r_max = QHBoxLayout(); r_max.addWidget(cb_max_age); r_max.addStretch(1); r_max.addWidget(sp_max_age); l.addLayout(r_max)
+        r_min = QHBoxLayout(); r_min.addWidget(cb_min_age); r_min.addStretch(1); r_min.addWidget(sp_min_age); l.addLayout(r_min)
+        
         r_btn = QHBoxLayout(); r_btn.addStretch(1); r_btn.addWidget(btn_save); l.addLayout(r_btn)
         dlg.exec()
 

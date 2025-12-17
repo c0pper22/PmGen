@@ -21,15 +21,23 @@ class BulkRunner(QObject):
     finished = pyqtSignal(str)
 
     def __init__(self, cfg: BulkConfig, threshold: float, life_basis: str, threshold_enabled: bool = True,
-                 unpack_filter_enabled: bool = False, unpack_extra_months: int = 0):
+                 # Updated parameters
+                 unpack_max_enabled: bool = False, unpack_max_months: int = 0,
+                 unpack_min_enabled: bool = False, unpack_min_months: int = 0):
         super().__init__()
         self.cfg = cfg
         self.threshold = threshold
         self.life_basis = life_basis
         self.threshold_enabled = bool(threshold_enabled)
         self._blacklist = [p.upper() for p in (cfg.blacklist or [])]
-        self._unpack_filter_enabled = bool(unpack_filter_enabled)
-        self._unpack_extra_months = max(0, min(120, int(unpack_extra_months)))
+        
+        # Max Age (Exclude Older Than)
+        self._unpack_max_enabled = bool(unpack_max_enabled)
+        self._unpack_max_months = max(0, min(120, int(unpack_max_months)))
+
+        # Min Age (Exclude Newer Than)
+        self._unpack_min_enabled = bool(unpack_min_enabled)
+        self._unpack_min_months = max(0, min(120, int(unpack_min_months)))
 
     def _is_blacklisted(self, serial: str) -> bool:
         s = (serial or "").upper()
@@ -39,8 +47,9 @@ class BulkRunner(QObject):
         return False
 
     def _prefilter_by_unpack_date(self, serials: list[str], pool) -> list[str]:
-        if not self._unpack_filter_enabled:
-            self.progress.emit("[Info] Unpack filter disabled.")
+        # If neither filter is on, skip everything
+        if not self._unpack_max_enabled and not self._unpack_min_enabled:
+            self.progress.emit("[Info] Unpack date filters disabled.")
             return list(serials)
 
         try:
@@ -63,12 +72,17 @@ class BulkRunner(QObject):
             return date(y, m, min(d.day, calendar.monthrange(y, m)[1]))
 
         kept = []
-        base_months = int(self._unpack_extra_months)
         
         with pool.acquire() as sess:
-            self.progress.emit(f"[Bulk] Applying unpacking date filter (+{self._unpack_extra_months} mo)…")
+            msg_parts = []
+            if self._unpack_max_enabled: msg_parts.append(f"Older than {self._unpack_max_months}mo")
+            if self._unpack_min_enabled: msg_parts.append(f"Newer than {self._unpack_min_months}mo")
+            
+            self.progress.emit(f"[Bulk] Applying filters: {', '.join(msg_parts)}")
+            
             count = 0
             total = len(serials)
+            today = date.today()
             
             for s in serials:
                 count += 1
@@ -81,25 +95,31 @@ class BulkRunner(QObject):
                     else:
                         d = _get_unpack(s, sess)
                 except Exception:
-                    kept.append(s)
+                    kept.append(s) # Keep on error
                     continue
 
                 if not d:
-                    kept.append(s)
+                    kept.append(s) # Keep if no date found
                     continue
 
-                cutoff = _add_months(d, base_months)
-                today = date.today()
-                if today > cutoff:
-                    over = (today.year - cutoff.year) * 12 + (today.month - cutoff.month)
-                    if today.day < cutoff.day:
-                        over -= 1
-                    over = max(0, over)
-                    self.progress.emit(
-                        f"[Bulk] Filtered: {s} unpacked {d:%Y-%m-%d} → cutoff {cutoff:%Y-%m-%d} (>{base_months} mo{f' +{over}' if over else ''})"
-                    )
-                else:
-                    kept.append(s)
+                # --- 1. Max Age Check (Exclude Old Stuff) ---
+                if self._unpack_max_enabled:
+                    cutoff_max = _add_months(d, self._unpack_max_months)
+                    if today > cutoff_max:
+                        # Too old
+                        kept_months = (today.year - cutoff_max.year) * 12 + (today.month - cutoff_max.month)
+                        self.progress.emit(f"[Bulk] Filtered (Too Old): {s} ({d}) is > {self._unpack_max_months} months old")
+                        continue 
+
+                # --- 2. Min Age Check (Exclude New Stuff) ---
+                if self._unpack_min_enabled:
+                    cutoff_min = _add_months(d, self._unpack_min_months)
+                    if today < cutoff_min:
+                        # Too new
+                        self.progress.emit(f"[Bulk] Filtered (Too New): {s} ({d}) is < {self._unpack_min_months} months old")
+                        continue
+
+                kept.append(s)
         return kept
 
     def _fmt_pct(self, p):
