@@ -65,6 +65,14 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("PmGen")
         self.resize(1100, 720)
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
+
+        if getattr(sys, 'frozen', False):
+            backup_exe = sys.executable + ".old"
+            if os.path.exists(backup_exe):
+                try:
+                    os.remove(backup_exe)
+                except OSError:
+                    pass
         
         # Paths
         if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):

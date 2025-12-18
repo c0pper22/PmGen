@@ -12,24 +12,25 @@ from PyQt6.QtCore import QObject, pyqtSignal
 GITHUB_REPO = "c0pper22/PmGen"
 ASSET_NAME = "PmGen.zip" 
 CURRENT_VERSION = "2.5.3" 
+# Add a User-Agent so GitHub/EDRs know this isn't a generic bot script
+HEADERS = {'User-Agent': 'PmGen-Updater/1.0'}
 
 class UpdateWorker(QObject):
     """
-    Runs in a background thread to check for updates, download, and extract 
-    without freezing the GUI.
+    Runs in a background thread to check for updates, download, and extract.
     """
-    check_finished = pyqtSignal(bool, str, str) # (update_found, version_tag, download_url)
-    download_progress = pyqtSignal(int)         # (percentage 0-100)
-    extraction_progress = pyqtSignal(int)       # (percentage 0-100)
-    download_finished = pyqtSignal(str)         # (path_to_zip_file)
-    extraction_finished = pyqtSignal(str, str)  # (zip_path, extract_dir)
-    error_occurred = pyqtSignal(str)            # (error_message)
+    check_finished = pyqtSignal(bool, str, str) 
+    download_progress = pyqtSignal(int)
+    extraction_progress = pyqtSignal(int)
+    download_finished = pyqtSignal(str)
+    extraction_finished = pyqtSignal(str, str) 
+    error_occurred = pyqtSignal(str)
 
     def check_updates(self):
-        """Checks GitHub for a newer version."""
         url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
         try:
-            response = requests.get(url, timeout=5)
+            # Always use headers!
+            response = requests.get(url, headers=HEADERS, timeout=10)
             response.raise_for_status()
             data = response.json()
             
@@ -45,7 +46,7 @@ class UpdateWorker(QObject):
                 if download_url:
                     self.check_finished.emit(True, latest_tag, download_url)
                 else:
-                    self.error_occurred.emit(f"Update found ({latest_tag}), but {ASSET_NAME} is missing.")
+                    self.error_occurred.emit(f"Update found ({latest_tag}), but asset is missing.")
             else:
                 self.check_finished.emit(False, latest_tag, "")
                 
@@ -53,12 +54,12 @@ class UpdateWorker(QObject):
             self.error_occurred.emit(f"Update check failed: {str(e)}")
 
     def download_update(self, url):
-        """Downloads the new zip file."""
         try:
             temp_dir = tempfile.gettempdir()
             zip_path = os.path.join(temp_dir, "pmgen_update.zip")
             
-            r = requests.get(url, stream=True)
+            # Use headers here too
+            r = requests.get(url, headers=HEADERS, stream=True)
             r.raise_for_status()
             total_size = int(r.headers.get('content-length', 0))
             
@@ -77,19 +78,11 @@ class UpdateWorker(QObject):
             self.error_occurred.emit(f"Download failed: {str(e)}")
 
     def extract_update(self, zip_path):
-        """
-        Extracts the zip file file-by-file to calculate progress.
-        Runs in the background thread.
-        """
         try:
             temp_extract_dir = os.path.join(tempfile.gettempdir(), "pmgen_new_files")
             
-            # Clean up any previous extraction attempts
             if os.path.exists(temp_extract_dir):
-                try:
-                    shutil.rmtree(temp_extract_dir)
-                except OSError:
-                    pass
+                shutil.rmtree(temp_extract_dir, ignore_errors=True)
             os.makedirs(temp_extract_dir, exist_ok=True)
 
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
@@ -98,8 +91,6 @@ class UpdateWorker(QObject):
                 
                 for i, member in enumerate(members):
                     zip_ref.extract(member, temp_extract_dir)
-                    
-                    # Emit progress
                     if total_files > 0:
                         pct = int(((i + 1) / total_files) * 100)
                         self.extraction_progress.emit(pct)
@@ -112,54 +103,65 @@ class UpdateWorker(QObject):
 
 def perform_restart(zip_path, temp_extract_dir):
     """
-    1. Creates a .bat file to handle the file swap.
-    2. Launches the .bat and kills the current app.
-    
-    Arguments:
-        zip_path (str): The path to the downloaded zip (for cleanup).
-        temp_extract_dir (str): The folder where files were extracted.
+    Updates the application using the 'Rename & Replace' strategy.
+    This avoids using .bat files and cmd.exe, reducing AV false positives.
     """
     if not getattr(sys, 'frozen', False):
-        print("Not running frozen (exe). Skipping self-update.")
+        print("Not running frozen. Skipping update.")
         return
 
-    current_app_dir = os.path.dirname(sys.executable)
-    exe_name = os.path.basename(sys.executable)
+    current_exe = sys.executable
+    current_dir = os.path.dirname(current_exe)
+    
+    # Define the backup name (e.g., PmGen.exe.old)
+    backup_exe = current_exe + ".old"
     
     try:
-        bat_path = os.path.join(tempfile.gettempdir(), "pmgen_updater.bat")
+        # 1. Clean up any previous backup if it exists
+        if os.path.exists(backup_exe):
+            try:
+                os.remove(backup_exe)
+            except OSError:
+                print("Could not remove old backup. Proceeding anyway.")
+
+        # 2. Rename the CURRENT running executable
+        # Windows allows renaming a running executable!
+        os.rename(current_exe, backup_exe)
+
+        # 3. Move the NEW files from temp to the application directory
+        # We use shutil.copytree or a loop to copy everything over
+        for item in os.listdir(temp_extract_dir):
+            s = os.path.join(temp_extract_dir, item)
+            d = os.path.join(current_dir, item)
+            if os.path.isdir(s):
+                # Copy tree, remove destination if it exists
+                if os.path.exists(d):
+                    shutil.rmtree(d)
+                shutil.copytree(s, d)
+            else:
+                shutil.copy2(s, d)
+
+        # 4. Clean up temp files
+        try:
+            os.remove(zip_path)
+            shutil.rmtree(temp_extract_dir)
+        except OSError:
+            pass
+
+        # 5. Restart the Application
+        # We launch the NEW executable (which now has the original name)
+        # We do NOT use shell=True
+        print("Restarting application...")
+        subprocess.Popen([current_exe])
         
-        # This batch script:
-        # 1. Waits 3 seconds for the app to close.
-        # 2. Copies the already extracted files from temp to the app dir.
-        # 3. Deletes the zip and the temp folder.
-        # 4. Relaunches the app.
-        bat_content = f"""
-@echo off
-title Updating PmGen...
-echo Waiting for application to close...
-timeout /t 3 /nobreak > NUL
-
-echo Copying new files...
-xcopy "{temp_extract_dir}\\*" "{current_app_dir}\\" /E /H /Y /I
-
-echo Cleaning up...
-del "{zip_path}"
-rmdir /s /q "{temp_extract_dir}"
-
-echo Restarting application...
-start "" "{os.path.join(current_app_dir, exe_name)}"
-
-echo Done.
-del "%~f0"
-"""
-        with open(bat_path, "w") as bat_file:
-            bat_file.write(bat_content)
-
-        # Execute Batch and Exit
-        print("Launching updater script and exiting...")
-        subprocess.Popen([bat_path], shell=True)
+        # 6. Exit this process
         sys.exit()
 
     except Exception as e:
-        print(f"Failed to prepare update: {e}")
+        print(f"Update failed: {e}")
+        # If we failed after renaming, try to restore the name so the app isn't broken
+        if os.path.exists(backup_exe) and not os.path.exists(current_exe):
+            try:
+                os.rename(backup_exe, current_exe)
+            except:
+                pass
