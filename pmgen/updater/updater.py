@@ -5,13 +5,14 @@ import subprocess
 import zipfile
 import shutil
 import tempfile
+import time
 from packaging import version
 from PyQt6.QtCore import QObject, pyqtSignal
 
 # --- CONFIGURATION ---
 GITHUB_REPO = "c0pper22/PmGen"
 ASSET_NAME = "PmGen.zip" 
-CURRENT_VERSION = "2.5.3" 
+CURRENT_VERSION = "2.5.5" 
 # Add a User-Agent so GitHub/EDRs know this isn't a generic bot script
 HEADERS = {'User-Agent': 'PmGen-Updater/1.0'}
 
@@ -103,8 +104,8 @@ class UpdateWorker(QObject):
 
 def perform_restart(zip_path, temp_extract_dir):
     """
-    Updates the application using the 'Rename & Replace' strategy.
-    This avoids using .bat files and cmd.exe, reducing AV false positives.
+    Updates the application using 'Rename & Replace' for ALL files,
+    not just the executable. This bypasses 'File in Use' errors.
     """
     if not getattr(sys, 'frozen', False):
         print("Not running frozen. Skipping update.")
@@ -113,55 +114,59 @@ def perform_restart(zip_path, temp_extract_dir):
     current_exe = sys.executable
     current_dir = os.path.dirname(current_exe)
     
-    # Define the backup name (e.g., PmGen.exe.old)
-    backup_exe = current_exe + ".old"
-    
     try:
-        # 1. Clean up any previous backup if it exists
-        if os.path.exists(backup_exe):
-            try:
-                os.remove(backup_exe)
-            except OSError:
-                print("Could not remove old backup. Proceeding anyway.")
-
-        # 2. Rename the CURRENT running executable
-        # Windows allows renaming a running executable!
-        os.rename(current_exe, backup_exe)
-
-        # 3. Move the NEW files from temp to the application directory
-        # We use shutil.copytree or a loop to copy everything over
+        # 1. Iterate over the NEW files in the temp directory
         for item in os.listdir(temp_extract_dir):
-            s = os.path.join(temp_extract_dir, item)
-            d = os.path.join(current_dir, item)
-            if os.path.isdir(s):
-                # Copy tree, remove destination if it exists
-                if os.path.exists(d):
-                    shutil.rmtree(d)
-                shutil.copytree(s, d)
-            else:
-                shutil.copy2(s, d)
+            src_path = os.path.join(temp_extract_dir, item)
+            dst_path = os.path.join(current_dir, item)
+            
+            # If the destination file/folder already exists...
+            if os.path.exists(dst_path):
+                # Move it to a temporary ".old" name instead of deleting it.
+                # Windows allows renaming locked files (like running DLLs or the EXE).
+                old_path = dst_path + f".old.{int(time.time())}"
+                try:
+                    os.rename(dst_path, old_path)
+                except OSError:
+                    # If we can't rename it, it's likely a permission issue or heavily locked.
+                    # We try to proceed, but this file might fail to update.
+                    print(f"Warning: Could not move locked file {dst_path}")
+                    continue
 
-        # 4. Clean up temp files
+            # Move the new file into place
+            # shutil.move is safer here because the destination is now clear
+            shutil.move(src_path, dst_path)
+
+        # 2. Clean up the download
+        # (We don't remove temp_extract_dir here because we moved the files out of it)
         try:
             os.remove(zip_path)
-            shutil.rmtree(temp_extract_dir)
+            os.rmdir(temp_extract_dir) # Only works if empty
         except OSError:
             pass
 
-        # 5. Restart the Application
-        # We launch the NEW executable (which now has the original name)
-        # We do NOT use shell=True
+        # 3. Restart the Application
+        # DETACHED_PROCESS (0x00000008) or CREATE_NEW_CONSOLE (0x00000010)
+        # ensures the new process survives when this one dies.
         print("Restarting application...")
-        subprocess.Popen([current_exe])
         
-        # 6. Exit this process
-        sys.exit()
+        # Determine flags based on OS (Windows specific flags)
+        creation_flags = 0
+        if sys.platform == 'win32':
+            creation_flags = subprocess.CREATE_NEW_CONSOLE
+
+        subprocess.Popen(
+            [current_exe],
+            cwd=current_dir,
+            creationflags=creation_flags,
+            close_fds=True # Important! Close file handles so the child doesn't inherit locks
+        )
+        
+        # 4. Exit this process immediately
+        sys.exit(0)
 
     except Exception as e:
         print(f"Update failed: {e}")
-        # If we failed after renaming, try to restore the name so the app isn't broken
-        if os.path.exists(backup_exe) and not os.path.exists(current_exe):
-            try:
-                os.rename(backup_exe, current_exe)
-            except:
-                pass
+        # Note: We can't easily 'rollback' here because we renamed multiple files.
+        # Ideally, your app should detect broken states on startup.
+        raise e

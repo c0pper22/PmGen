@@ -30,6 +30,8 @@ from pmgen.updater.updater import UpdateWorker, perform_restart, CURRENT_VERSION
 # --- IMPORT THE NEW INVENTORY TAB ---
 from .inventory import InventoryTab
 
+import shutil
+
 SERVICE_NAME = "PmGen"
 
 # Constants
@@ -67,12 +69,17 @@ class MainWindow(QMainWindow):
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
 
         if getattr(sys, 'frozen', False):
-            backup_exe = sys.executable + ".old"
-            if os.path.exists(backup_exe):
-                try:
-                    os.remove(backup_exe)
-                except OSError:
-                    pass
+                import glob
+                current_dir = os.path.dirname(sys.executable)
+                # Look for any file containing ".old."
+                for p in glob.glob(os.path.join(current_dir, "*.old*")):
+                    try:
+                        if os.path.isdir(p):
+                            shutil.rmtree(p)
+                        else:
+                            os.remove(p)
+                    except OSError:
+                        pass
         
         # Paths
         if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
