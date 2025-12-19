@@ -135,8 +135,14 @@ class BulkRunner(QObject):
             if not self.cfg.out_dir or not self.cfg.out_dir.strip():
                 raise ValueError("Output directory is not set.")
             
-            date_subfolder = datetime.now().strftime("%Y-%m-%d")
-            final_out_dir = os.path.join(self.cfg.out_dir, date_subfolder) 
+            date_str = datetime.now().strftime("%Y-%m-%d")
+            base_path = os.path.join(self.cfg.out_dir, date_str)
+            final_out_dir = base_path
+            
+            counter = 1
+            while os.path.exists(final_out_dir):
+                final_out_dir = f"{base_path} ({counter})"
+                counter += 1
             
             os.makedirs(final_out_dir, exist_ok=True)
             # -----------------------------------------------
