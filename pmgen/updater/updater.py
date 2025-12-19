@@ -12,8 +12,7 @@ from PyQt6.QtCore import QObject, pyqtSignal
 # --- CONFIGURATION ---
 GITHUB_REPO = "c0pper22/PmGen"
 ASSET_NAME = "PmGen.zip" 
-CURRENT_VERSION = "2.5.5" 
-# Add a User-Agent so GitHub/EDRs know this isn't a generic bot script
+CURRENT_VERSION = "2.5.6" 
 HEADERS = {'User-Agent': 'PmGen-Updater/1.0'}
 
 class UpdateWorker(QObject):
@@ -30,7 +29,6 @@ class UpdateWorker(QObject):
     def check_updates(self):
         url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
         try:
-            # Always use headers!
             response = requests.get(url, headers=HEADERS, timeout=10)
             response.raise_for_status()
             data = response.json()
@@ -120,34 +118,27 @@ def perform_restart(zip_path, temp_extract_dir):
             src_path = os.path.join(temp_extract_dir, item)
             dst_path = os.path.join(current_dir, item)
             
-            # If the destination file/folder already exists...
             if os.path.exists(dst_path):
-                # Move it to a temporary ".old" name instead of deleting it.
-                # Windows allows renaming locked files (like running DLLs or the EXE).
                 old_path = dst_path + f".old.{int(time.time())}"
                 try:
                     os.rename(dst_path, old_path)
                 except OSError:
                     # If we can't rename it, it's likely a permission issue or heavily locked.
-                    # We try to proceed, but this file might fail to update.
                     print(f"Warning: Could not move locked file {dst_path}")
                     continue
 
             # Move the new file into place
-            # shutil.move is safer here because the destination is now clear
             shutil.move(src_path, dst_path)
 
         # 2. Clean up the download
-        # (We don't remove temp_extract_dir here because we moved the files out of it)
         try:
             os.remove(zip_path)
-            os.rmdir(temp_extract_dir) # Only works if empty
+            os.rmdir(temp_extract_dir)
         except OSError:
             pass
 
         # 3. Restart the Application
         # DETACHED_PROCESS (0x00000008) or CREATE_NEW_CONSOLE (0x00000010)
-        # ensures the new process survives when this one dies.
         print("Restarting application...")
         
         # Determine flags based on OS (Windows specific flags)

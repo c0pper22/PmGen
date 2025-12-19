@@ -1,5 +1,6 @@
 import os
 import traceback
+from datetime import datetime
 from dataclasses import dataclass
 from fnmatch import fnmatchcase
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -134,13 +135,17 @@ class BulkRunner(QObject):
             if not self.cfg.out_dir or not self.cfg.out_dir.strip():
                 raise ValueError("Output directory is not set.")
             
+            date_subfolder = datetime.now().strftime("%Y-%m-%d")
+            final_out_dir = os.path.join(self.cfg.out_dir, date_subfolder) 
+            
+            os.makedirs(final_out_dir, exist_ok=True)
+            # -----------------------------------------------
+
             from pmgen.io.http_client import SessionPool, get_serials_after_login, get_service_file_bytes
             from pmgen.parsing.parse_pm_report import parse_pm_report
             from pmgen.engine.run_rules import run_rules
             from pmgen.engine.single_report import create_pdf_report
             from pmgen.engine.final_report import write_final_summary_pdf
-
-            os.makedirs(self.cfg.out_dir, exist_ok=True)
 
             self.progress.emit("[Info] Creating session pool...")
             pool = SessionPool(self.cfg.pool_size)
@@ -186,14 +191,12 @@ class BulkRunner(QObject):
                 try:
                     with pool.acquire() as sess:
                         blob = get_service_file_bytes(serial, "PMSupport", sess=sess)
+                    
                     report = parse_pm_report(blob)
                     selection = run_rules(report, threshold=thr, life_basis=basis, threshold_enabled=thr_enabled)
 
-                    # --- FIX START: Correctly retrieve 'all_items' from metadata ---
                     meta = getattr(selection, "meta", {}) or {}
-                    # Try keys 'all_items' (used in run_rules.py) then 'all' (legacy fallback)
                     all_items = meta.get("all_items", []) or meta.get("all", []) or getattr(selection, "all_items", []) or []
-                    # --- FIX END ---
                     
                     # Calculate best usage percentage
                     best_used = max([float(get_val(f, "life_used", 0.0) or 0.0) for f in all_items], default=0.0)
@@ -204,7 +207,7 @@ class BulkRunner(QObject):
                         threshold=thr,
                         life_basis=basis,
                         show_all=show_all,
-                        out_dir=self.cfg.out_dir,
+                        out_dir=final_out_dir,
                         threshold_enabled=thr_enabled
                     )
 
@@ -232,7 +235,6 @@ class BulkRunner(QObject):
                         if "error" in res:
                             self.progress.emit(f"[Bulk] {s}: ERROR — {res['error']}")
                         else:
-                            # Log percentage to confirm valid data is being read
                             self.progress.emit(f"[Bulk] {s}: OK — {self._fmt_pct(res['best_used'])}")
                         results.append(res)
                     except Exception as e:
@@ -243,11 +245,11 @@ class BulkRunner(QObject):
             ok.sort(key=lambda r: (r.get("best_used") or 0.0), reverse=True)
             top = ok[: self.cfg.top_n]
 
-            self.progress.emit(f"[Info] Wrote {len(top)} report files to: {self.cfg.out_dir}")
+            self.progress.emit(f"[Info] Wrote {len(top)} report files to: {final_out_dir}")
 
             try:
                 pdf_path = write_final_summary_pdf(
-                    out_dir=self.cfg.out_dir,
+                    out_dir=final_out_dir,
                     results=results, 
                     top=top,
                     thr=thr,
