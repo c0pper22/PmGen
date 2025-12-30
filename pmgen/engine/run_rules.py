@@ -63,6 +63,7 @@ def run_rules(report, threshold, life_basis, threshold_enabled=True) -> Selectio
         
     ctx.meta["watch"] = watch
     ctx.meta["all_items"] = list(ctx.findings.values())
+    ctx.meta["alerts"] = ctx.alerts
     
     return Selection(
         items=due, 

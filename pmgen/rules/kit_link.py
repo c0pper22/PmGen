@@ -88,6 +88,7 @@ class KitLinkRule(RuleBase):
         model = ctx.model
         cmap = self._get_cached_map(model)
         if not cmap:
+            ctx.alerts.append(f"Could not link part to kit, No parts catalog found for model '{model}'.")
             return
 
         for canon, finding in ctx.findings.items():
@@ -97,3 +98,5 @@ class KitLinkRule(RuleBase):
             kit_code = cmap.get(canon)
             if kit_code:
                 setattr(finding, "kit_code", kit_code)
+            else:
+                ctx.alerts.append(f"Missing Link: Item '{canon}' is DUE, but no Kit Code is defined in catalog.")

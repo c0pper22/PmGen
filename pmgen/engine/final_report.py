@@ -240,7 +240,7 @@ def write_final_summary_pdf(
 
     # B. INVENTORY CHECK (Combined & Factored)
     inv_map = _load_inventory_map()
-    
+    bulk_alerts = []
     # Merge Over 100 and Threshold needs
     combined_needed = total_over_upn.copy()
     for k, v in total_thr_upn.items():
@@ -261,23 +261,43 @@ def write_final_summary_pdf(
                 if re.search(pattern, inv_key[1]):
                     found_matches.append((inv_key, inv_qty))
 
-            # 2. Analyze matches and check for Collisions
+            if len(found_matches) > 1:
+                
+                best_matches = []
+                for match in found_matches:
+                    inv_name = match[0][1]
+                    start_index = inv_name.find(unit[0])
+                    
+                    if start_index != -1:
+                        # Get the text immediately following the match
+                        remainder = inv_name[start_index + len(unit[0]):]
+                        
+                        # Logic: It is a 'good' match if:
+                        # 1. It is the end of the string (remainder is empty)
+                        # 2. It is followed by a space
+                        # 3. It is followed by " - " or "- " (Separator hyphens)
+                        # It is a 'BAD' match if it is followed by "-U", "-X", etc.
+                        
+                        if (not remainder) or (remainder[0] == ' ') or (remainder.startswith('- ')):
+                            best_matches.append(match)
+                
+                if len(best_matches) > 0:
+                    found_matches = best_matches
+
             have_qty = 0
             
             if len(found_matches) == 0:
                 have_qty = 0
                 
             elif len(found_matches) == 1:
-                # Perfect scenario: exactly one match found
                 have_qty = int(found_matches[0][1])
                 
             else:
-                # COLLISION DETECTED (More than 1 match)
-                print(f"⚠️ COLLISION WARNING: '{unit[0]}' matched {len(found_matches)} items:")
-                for match in found_matches:
-                    print(f"   - Inventory Name: {match[0][1]} | Qty: {match[1]}")
+                conflict_names = [m[0][1] for m in found_matches[:3]] # limit to 3
+                msg = f"Collision for '{unit[0]}': Matched {len(found_matches)} items {conflict_names}..."
                 
-                # take the first one.
+                print(f"⚠️ {msg}") # Keep console log
+                bulk_alerts.append(msg)
                 have_qty = int(found_matches[0][1])
 
             # 3. Calculate Order Quantity
@@ -298,6 +318,16 @@ def write_final_summary_pdf(
             # Add 'len(found_matches)' to the row if you want to track collision count in the final data
             inv_rows.append([needed_qty, have_qty, order_qty, pn_key, u_name, code])
 #-------------------------------------------------------------------------------------------------------
+
+    if bulk_alerts:
+        if "AlertText" not in styles:
+            styles.add(ParagraphStyle(name="AlertText", parent=styles["BodyText"], textColor=colors.red, fontSize=10, spaceAfter=2))
+        
+        story.append(Paragraph("⚠️ Generation Alerts", styles["Section"]))
+        story.append(_hline(color=colors.red))
+        for alert in bulk_alerts:
+            story.append(Paragraph(f"• {alert}", styles["AlertText"]))
+        story.append(Spacer(1, 0.2 * inch))
 
     story.append(Paragraph("Inventory Check — Order List", styles["Section"]))
     story.append(_hline())

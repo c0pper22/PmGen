@@ -34,6 +34,10 @@ class RibonExpansionRule(RuleBase):
 
         try:
             rows, flat_pns = resolve_with_rows(selection)
+
+            for kit_code in selection.keys():
+                if kit_code not in rows:
+                    ctx.alerts.append(f"Database Error: Kit '{kit_code}' not found in Ribon DB (No Part #).")
             
             grouped: Dict[str, Dict[str, int]] = {}
             kit_by_pn: Dict[str, str] = {}

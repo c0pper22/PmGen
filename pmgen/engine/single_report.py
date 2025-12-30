@@ -116,6 +116,7 @@ def format_report(
     final_lines: List[str] = []
 
     meta = getattr(selection, "meta", {}) or {}
+    alerts = meta.get("alerts", [])
     grouped = meta.get("selection_pn_grouped", {}) or {}
     flat    = meta.get("selection_pn", {}) or {}
     by_pn   = meta.get("kit_by_pn", {}) or {}
@@ -192,6 +193,13 @@ def format_report(
     lines: List[str] = []
     lines.append("───────────────────────────────────────────────────────────────")
     lines.append(f"Model: {model}  |  Serial: {serial}  |  Date: {dt_str}")
+
+    if alerts:
+        lines.append("")
+        lines.append("!!! SYSTEM ALERTS !!!")
+        for a in alerts:
+            lines.append(f"  [!] {a}")
+        lines.append("")
 
     if threshold_enabled: thr_text = f"{threshold * 100:.1f}%"
     else: thr_text = "100.0%"
@@ -291,6 +299,7 @@ def create_pdf_report(
 
     # Final parts
     meta = getattr(selection, "meta", {}) or {}
+    alerts = meta.get("alerts", [])
     grouped = meta.get("selection_pn_grouped", {}) or {}
     flat    = meta.get("selection_pn", {}) or {}
     by_pn   = meta.get("kit_by_pn", {}) or {}
@@ -328,6 +337,8 @@ def create_pdf_report(
     doc = SimpleDocTemplate(path, pagesize=LETTER, leftMargin=0.5 * inch, rightMargin=0.5 * inch, topMargin=0.5 * inch, bottomMargin=0.5 * inch)
 
     styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(name="AlertHeader", parent=styles["Heading4"], textColor=colors.red, spaceBefore=6, spaceAfter=2))
+    styles.add(ParagraphStyle(name="AlertText", parent=styles["BodyText"], textColor=colors.red, fontSize=9))
     styles.add(ParagraphStyle(name="H1", fontName="Helvetica-Bold", fontSize=14, leading=16, textColor=colors.HexColor("#111827"), spaceBefore=0, spaceAfter=2))
     styles.add(ParagraphStyle(name="Meta", fontName="Helvetica", fontSize=9, leading=10, textColor=colors.HexColor("#374151"), spaceBefore=0, spaceAfter=2))
     styles.add(ParagraphStyle(name="Section", fontName="Helvetica-Bold", fontSize=11, leading=12, textColor=colors.HexColor("#111827"), spaceBefore=4, spaceAfter=2))
@@ -343,6 +354,14 @@ def create_pdf_report(
     story.append(Paragraph(f"Due threshold: {thr_text}  •  Basis: {life_basis.upper()}", styles["Meta"]))
     if parts: story.append(Paragraph("Counters: " + "  ".join(parts), styles["Meta"]))
     story.append(Spacer(1, 4))
+
+    if alerts:
+        story.append(Paragraph("System Alerts", styles["AlertHeader"]))
+        for alert in alerts:
+            # Bullet point symbol for clarity
+            story.append(Paragraph(f"• {alert}", styles["AlertText"]))
+        story.append(Spacer(1, 4))
+        story.append(_hline(thickness=0.5, color=colors.red))
 
     # Most-Due Items
     if most_due:

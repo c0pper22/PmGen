@@ -23,6 +23,7 @@ class InventoryCheckRule(RuleBase):
                     "ordering": qty_needed
                 })
             ctx.meta["inventory_missing"] = missing
+            ctx.alerts.append("Inventory cache is empty or missing. All items marked as order needed.")
             return
 
         matches = []

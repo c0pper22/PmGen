@@ -329,7 +329,7 @@ class InventoryTab(QWidget):
 
     def _auto_save_to_cache(self):
         df = self.model.get_dataframe()
-        if df is not None and not df.empty:
+        if df is not None:
             try:
                 path = self._get_cache_path()
                 df.to_csv(path, index=False)
