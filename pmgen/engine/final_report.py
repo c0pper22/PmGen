@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+import re
 from datetime import datetime
 
 # ReportLab Imports
@@ -247,13 +248,39 @@ def write_final_summary_pdf(
 #--------------- This Logic is correct do not change this please ------------------
     inv_rows = []
     if combined_needed:
+        # Sorting by the unit name tuple
         for unit, needed_qty in sorted(combined_needed.items(), key=lambda k: (k[0][0], k[0][1])):
-            have_qty = 0
+            
+            # 1. Collect ALL matches instead of breaking on the first one
+            found_matches = []
+
+            pattern = r"\b" + re.escape(unit[0]) + r"\b"
+            
             for inv_key, inv_qty in inv_map.items():
-                    if unit[0] in inv_key[1]:
-                        have_qty = int(inv_qty)
-                        break
-                        
+                # Check if the needed unit name is inside the inventory unit name
+                if re.search(pattern, inv_key[1]):
+                    found_matches.append((inv_key, inv_qty))
+
+            # 2. Analyze matches and check for Collisions
+            have_qty = 0
+            
+            if len(found_matches) == 0:
+                have_qty = 0
+                
+            elif len(found_matches) == 1:
+                # Perfect scenario: exactly one match found
+                have_qty = int(found_matches[0][1])
+                
+            else:
+                # COLLISION DETECTED (More than 1 match)
+                print(f"⚠️ COLLISION WARNING: '{unit[0]}' matched {len(found_matches)} items:")
+                for match in found_matches:
+                    print(f"   - Inventory Name: {match[0][1]} | Qty: {match[1]}")
+                
+                # take the first one.
+                have_qty = int(found_matches[0][1])
+
+            # 3. Calculate Order Quantity
             order_qty = max(0, needed_qty - have_qty)
             
             # Determine Color
@@ -267,6 +294,8 @@ def write_final_summary_pdf(
             
             u_name = unit[0]
             pn_key = unit[1]
+            
+            # Add 'len(found_matches)' to the row if you want to track collision count in the final data
             inv_rows.append([needed_qty, have_qty, order_qty, pn_key, u_name, code])
 #-------------------------------------------------------------------------------------------------------
 

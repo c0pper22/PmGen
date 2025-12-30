@@ -1,4 +1,5 @@
 from pmgen.canon.canon_utils import canon_unit
+import csv
 
 class PmItem:
     def __init__(self, descriptor = None, current_page_count = None, expected_page_count = None, current_drive_count = None, expected_drive_count = None):
@@ -188,7 +189,8 @@ def ParsePmReport(data: bytes) -> PmReport:
         if row.startswith("PM SUPPORT CODE LIST") or row.startswith("UNIT,"):
             continue
 
-        parts = [p.strip() for p in row.split(",")]
+        reader = csv.reader([row])
+        parts = [p.strip() for p in next(reader)]
         if not parts:
             continue
 

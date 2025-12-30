@@ -8,28 +8,28 @@ It fetches official **PM Support Code List** reports, applies rule-based logic t
 
 ## ✨ New in this Version
 
-| Feature | Description |
-| --- | --- |
-| **📦 Inventory System** | A dedicated **Inventory Tab** allows you to import stock CSVs, manually add/edit items, and track total stock value. |
+| Feature                     | Description                                                                                                                                            |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **📦 Inventory System**     | A dedicated **Inventory Tab** allows you to import stock CSVs, manually add/edit items, and track total stock value.                                   |
 | **✅ Stock Reconciliation** | The report engine now checks your inventory cache. Reports automatically split items into **"Inventory Matches (In Stock)"** and **"Items to Order"**. |
-| **📅 Smart Bulk Filters** | The Bulk Runner now supports **Unpack Date filtering**. You can exclude machines that are too new (< X months) or too old (> X months). |
-| **🖥️ Modern UI** | A custom frameless interface with tabbed navigation ("Home" vs "Inventory"), auto-complete for serials, and a colorized output editor. |
+| **📅 Smart Bulk Filters**   | The Bulk Runner now supports **Unpack Date filtering**. You can exclude machines that are too new (< X months) or too old (> X months).                |
+| **🖥️ Modern UI**            | A custom frameless interface with tabbed navigation ("Home" vs "Inventory"), auto-complete for serials, and a colorized output editor.                 |
 
 ---
 
 ## 🚀 Features Overview
 
-* **Smart Parsing:** Fetches and parses PM Support Code Lists from Toshiba Elevate Sky / e-Service.
-* **Rule Engine:** Applies a pipeline of logic:
+- **Smart Parsing:** Fetches and parses PM Support Code Lists from Toshiba Elevate Sky / e-Service.
+- **Rule Engine:** Applies a pipeline of logic:
+
 1. **Life Calculation:** Flags items based on % life used (Page or Drive basis).
 2. **Canon Mapping:** Normalizes varying descriptor names (e.g., `DRUM[Y]`) to standard codes.
 3. **Part Resolution:** Resolves generic kit codes to specific Part Numbers using `Ribon.accdb`.
 4. **Inventory Check:** Compares needed parts against local stock levels.
 
-
-* **Bulk Fleet Analysis:** Multi-threaded processing of hundreds of serials. Generates a consolidated PDF summary with color-coded stock status (Red=Missing, Yellow=Partial, Green=In Stock).
-* **Authentication:** Secure login with OS keyring support.
-* **Auto-Updater:** Integrated update checker to keep the tool current.
+- **Bulk Fleet Analysis:** Multi-threaded processing of hundreds of serials. Generates a consolidated PDF summary with color-coded stock status (Red=Missing, Yellow=Partial, Green=In Stock).
+- **Authentication:** Secure login with OS keyring support.
+- **Auto-Updater:** Integrated update checker to keep the tool current.
 
 ---
 
@@ -38,14 +38,13 @@ It fetches official **PM Support Code List** reports, applies rule-based logic t
 The system now operates on a **Tabbed** workflow:
 
 1. **Inventory Tab:** Manage your stock.
-* Load CSVs (currently only supports EAutomate csv export) or manually add rows.
-* Data is cached locally to `inventory_cache.csv`.
 
+- Load CSVs (currently only supports EAutomate csv export) or manually add rows.
+- Data is cached locally to `inventory_cache.csv`.
 
 2. **Home Tab:** Generate reports.
-* Enter Serial -> Fetch Data -> Run Rules -> Check Inventory -> Output Report.
 
-
+- Enter Serial -> Fetch Data -> Run Rules -> Check Inventory -> Output Report.
 
 ### The Rule Pipeline
 
@@ -62,14 +61,12 @@ The system now operates on a **Tabbed** workflow:
 
 When generating a report, PmGen looks at `inventory_cache.csv`.
 
-* **Matches:** If you have the part, it appears under "Inventory Matches."
-* **Missing:** If you have 0 or partial quantity, it appears under "Items to Order."
-* **Summary PDF:** The bulk summary uses color codes:
-* 🟥 **Red:** 0 Stock (Need to order)
-* 🟨 **Yellow:** Partial Stock (Need to order balance)
-* 🟩 **Green:** Full Stock (No order needed)
-
-
+- **Matches:** If you have the part, it appears under "Inventory Matches."
+- **Missing:** If you have 0 or partial quantity, it appears under "Items to Order."
+- **Summary PDF:** The bulk summary uses color codes:
+- 🟥 **Red:** 0 Stock (Need to order)
+- 🟨 **Yellow:** Partial Stock (Need to order balance)
+- 🟩 **Green:** Full Stock (No order needed)
 
 ---
 
@@ -77,8 +74,8 @@ When generating a report, PmGen looks at `inventory_cache.csv`.
 
 ### Prerequisites
 
-* **Python 3.13+**
-* **Toshiba's RIBON.exe**
+- **Python 3.13+**
+- **Toshiba's RIBON.exe**
 
 ### Install dependencies
 
@@ -95,35 +92,33 @@ pip install -r requirements.txt
 
 Go to the **Inventory** tab.
 
-* **Import:** Load a CSV file (only supports EAutomate csv export).
-* **Edit:** Double-click cells to update Quantities or Costs.
-* **Add/Delete:** Use the toolbar buttons to manage rows manually.
-* *Note: Changes are auto-saved to your local cache.*
+- **Import:** Load a CSV file (only supports EAutomate csv export).
+- **Edit:** Double-click cells to update Quantities or Costs.
+- **Add/Delete:** Use the toolbar buttons to manage rows manually.
+- _Note: Changes are auto-saved to your local cache._
 
 ### 2. Single Report (Home Tab)
 
 1. Enter a **Serial Number** (Auto-complete remembers history).
 2. Click **Generate** (or press Enter).
 3. The output window displays:
-* **Highest Wear Items:** Items exceeding the % threshold.
-* **Final Parts:** Total quantities needed.
-* **Inventory Matches:** Parts you already have.
-* **Items to Order:** Parts you need to buy.
 
-
+- **Highest Wear Items:** Items exceeding the % threshold.
+- **Final Parts:** Total quantities needed.
+- **Inventory Matches:** Parts you already have.
+- **Items to Order:** Parts you need to buy.
 
 ### 3. Bulk Mode
 
 Go to **Bulk ▾ → Bulk Settings…**
 
-* **Top N:** How many "most worn" machines to include in the summary.
-* **Pool Size:** Number of parallel download threads.
-* **Date Filters:**
-* `Exclude if OLDER than X months`: Ignores old machines (based on unpack date).
-* `Exclude if NEWER than X months`: Ignores brand new installs.
+- **Top N:** How many "most worn" machines to include in the summary.
+- **Pool Size:** Number of parallel download threads.
+- **Date Filters:**
+- `Exclude if OLDER than X months`: Ignores old machines (based on unpack date).
+- `Exclude if NEWER than X months`: Ignores brand new installs.
 
-
-* **Run Bulk:** Processes the fleet and produces individual PDFs + `Final_Summary.pdf`.
+- **Run Bulk:** Processes the fleet and produces individual PDFs + `Final_Summary.pdf`.
 
 ---
 

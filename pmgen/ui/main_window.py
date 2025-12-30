@@ -92,6 +92,7 @@ class MainWindow(QMainWindow):
         self._signed_in: bool = False
         self._current_user: str = ""
         self._auto_login_attempted: bool = False
+        self._session = None
 
         # Global tracking + event filter
         app = QApplication.instance()
@@ -558,7 +559,7 @@ class MainWindow(QMainWindow):
         data = None
         try:
             from pmgen.io.http_client import get_service_file_bytes
-            data = get_service_file_bytes(text, "PMSupport")
+            data = get_service_file_bytes(text, "PMSupport", sess=self._session)
         except Exception:
             try:
                 if hasattr(self, "act_login"): self.act_login.trigger()
@@ -825,6 +826,7 @@ class MainWindow(QMainWindow):
             from pmgen.io import http_client as hc
             sess = requests.Session()
             hc.login(sess)
+            self._session = sess
             self._signed_in = True; self._current_user = u; self._update_auth_ui()
             self.editor.appendPlainText(f"[Auto-Login] {u} — success")
         except Exception as e:
@@ -839,7 +841,7 @@ class MainWindow(QMainWindow):
             if hasattr(hc, "SessionPool"): hc.SessionPool.close_all_pools()
             hc.clear_credentials()
         except: pass
-        self._signed_in = False; self._current_user = ""; self._update_auth_ui(); self.editor.appendPlainText("[Info] - Logout Successful")
+        self._signed_in = False; self._current_user = ""; self._session = None; self._update_auth_ui(); self.editor.appendPlainText("[Info] - Logout Successful")
 
     def _update_auth_ui(self):
         self.user_label.setText(self._current_user or "(signed in)" if self._signed_in else "Not signed in")
