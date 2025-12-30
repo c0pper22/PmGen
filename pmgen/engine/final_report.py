@@ -245,6 +245,9 @@ def write_final_summary_pdf(
     combined_needed = total_over_upn.copy()
     for k, v in total_thr_upn.items():
         combined_needed[k] = combined_needed.get(k, 0) + v
+
+    if not inv_map and combined_needed:
+        bulk_alerts.append("Inventory cache is empty or missing. All items marked as order needed.")
 #--------------- This Logic is correct do not change this please ------------------
     inv_rows = []
     if combined_needed:
