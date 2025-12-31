@@ -14,7 +14,7 @@ from reportlab.platypus.flowables import KeepTogether, HRFlowable
 
 from datetime import datetime
 import os
-
+import re
 
 def _collect_all_findings(selection, show_all: bool):
     due = list(getattr(selection, "items", []) or [])
@@ -330,7 +330,15 @@ def create_pdf_report(
 
     # Build PDF
     best_used_pct = (max((getattr(f, "life_used", None) or 0.0) for f in combined) * 100.0) if combined else 0.0
-    fname = f"{best_used_pct:.1f}_{serial}.pdf"
+    pattern = r"\d{3,4}AC?"
+    found_matches = re.findall(pattern, model)
+
+    if found_matches:
+        model_trimmed = found_matches[0]
+    else:
+        model_trimmed = "UnknownModel"
+
+    fname = f"{best_used_pct:.1f}_{serial}_{model_trimmed}.pdf"
 
     os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, fname)
