@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Dict, List, Optional, Set, Iterable
 from pmgen.rules.base import Context, RuleBase
 from pmgen.types import Finding
+import os
 
 from pmgen.catalog import part_kit_catalog as catalog_mod
 from pmgen.rules.generic_life import _is_due

@@ -5,16 +5,13 @@ from PyInstaller.building.datastruct import Tree
 
 block_cipher = None
 project_root = Path('.').resolve()
-print(project_root)
 
 # Third-party data
 reportlab_datas = collect_data_files("reportlab")
 certifi_datas, certifi_bins, certifi_hidden = collect_all('certifi')
 
-# datas: ONLY (src, dest) pairs, no Tree here
-datas = certifi_datas + reportlab_datas
+datas = certifi_datas + reportlab_datas + [('catalog_manager.db', '.')]
 
-# Icon tree: this dir MUST exist: pmgen/assets/icons
 icons_tree = Tree(
     str(project_root / "pmgen" / "assets" / "icons"),
     prefix="pmgen/assets/icons",
@@ -47,6 +44,7 @@ hidden = [
     'PyQt6.QtSvg', 'PyQt6.QtPrintSupport',
 ]
 
+# --- 1. Analysis for Main App ---
 a = Analysis(
     ['pmgen/ui/app.py'],
     pathex=[str(project_root)],
@@ -73,9 +71,7 @@ pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
+    [],
     exclude_binaries=True,
     name='PmGen',
     console=False,
@@ -86,11 +82,54 @@ exe = EXE(
     icon=('pmgen.ico' if Path('pmgen.ico').exists() else None),
 )
 
+# --- 2. Analysis for Updater (ONEFILE) ---
+a_updater = Analysis(
+    ['pmgen/updater/run_update.py'],
+    pathex=[str(project_root)],
+    binaries=[],
+    datas=[],
+    hiddenimports=[],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[],
+    noarchive=False,
+)
+
+pyz_updater = PYZ(a_updater.pure, a_updater.zipped_data, cipher=block_cipher)
+
+exe_updater = EXE(
+    pyz_updater,
+    a_updater.scripts,
+    a_updater.binaries,
+    a_updater.zipfiles,
+    a_updater.datas,
+    [],
+    name='updater',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    runtime_tmpdir=None,
+    console=False, # Hide console window for updater
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+)
+
+# --- 3. Collection (Combined) ---
 coll = COLLECT(
     exe,
     a.binaries,
     a.zipfiles,
     a.datas,
+    
+    # Add the updater executable to the folder
+    exe_updater,
+    
     icons_tree,
     strip=False,
     upx=True,

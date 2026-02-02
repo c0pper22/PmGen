@@ -102,8 +102,8 @@ class UpdateWorker(QObject):
 
 def perform_restart(zip_path, temp_extract_dir):
     """
-    Updates the application using 'Rename & Replace' for ALL files,
-    not just the executable. This bypasses 'File in Use' errors.
+    Launches the separate 'updater.exe' to handle the file move
+    and restarts the app.
     """
     if not getattr(sys, 'frozen', False):
         print("Not running frozen. Skipping update.")
@@ -111,53 +111,27 @@ def perform_restart(zip_path, temp_extract_dir):
 
     current_exe = sys.executable
     current_dir = os.path.dirname(current_exe)
+    exe_name = os.path.basename(current_exe)
     
+    # The updater.exe is now bundled in the same folder
+    updater_exe = os.path.join(current_dir, "updater.exe")
+
+    if not os.path.exists(updater_exe):
+        print("Error: updater.exe not found!")
+        return
+
+    # Delete the zip file now since we have extracted it
     try:
-        # 1. Iterate over the NEW files in the temp directory
-        for item in os.listdir(temp_extract_dir):
-            src_path = os.path.join(temp_extract_dir, item)
-            dst_path = os.path.join(current_dir, item)
-            
-            if os.path.exists(dst_path):
-                old_path = dst_path + f".old.{int(time.time())}"
-                try:
-                    os.rename(dst_path, old_path)
-                except OSError:
-                    # If we can't rename it, it's likely a permission issue or heavily locked.
-                    print(f"Warning: Could not move locked file {dst_path}")
-                    continue
+        os.remove(zip_path)
+    except OSError:
+        pass
 
-            # Move the new file into place
-            shutil.move(src_path, dst_path)
-
-        # 2. Clean up the download
-        try:
-            os.remove(zip_path)
-            os.rmdir(temp_extract_dir)
-        except OSError:
-            pass
-
-        # 3. Restart the Application
-        # DETACHED_PROCESS (0x00000008) or CREATE_NEW_CONSOLE (0x00000010)
-        print("Restarting application...")
-        
-        # Determine flags based on OS (Windows specific flags)
-        creation_flags = 0
-        if sys.platform == 'win32':
-            creation_flags = subprocess.CREATE_NEW_CONSOLE
-
-        subprocess.Popen(
-            [current_exe],
-            cwd=current_dir,
-            creationflags=creation_flags,
-            close_fds=True # Important! Close file handles so the child doesn't inherit locks
-        )
-        
-        # 4. Exit this process immediately
-        sys.exit(0)
-
-    except Exception as e:
-        print(f"Update failed: {e}")
-        # Note: We can't easily 'rollback' here because we renamed multiple files.
-        # Ideally, your app should detect broken states on startup.
-        raise e
+    # Launch updater.exe detached
+    # Args: 1. New Files Path, 2. Install Dir, 3. Exe Name
+    # creationflags=0x00000008 (DETACHED_PROCESS) is useful on Windows to ensure 
+    # the updater survives the parent death if running from console, 
+    # but Popen default behavior usually works fine for GUI apps.
+    subprocess.Popen([updater_exe, temp_extract_dir, current_dir, exe_name])
+    
+    # Exit immediately so the updater can grab the file locks
+    sys.exit(0)

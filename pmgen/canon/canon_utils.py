@@ -1,6 +1,9 @@
+import sqlite3
 import re
+import os
 from typing import Dict, Optional, Iterable, Set, Tuple, List, Pattern
 import types
+from pmgen.io.http_client import get_db_path
 
 SPC   = r"\s*"
 LP    = r"\(?"
@@ -192,10 +195,25 @@ def canon_unit(raw: str) -> Optional[str]:
     s = re.sub(r"\s+", " ", raw.strip())
     s = s.replace("（", "(").replace("）", ")")
 
-    for pat, tpl in CANON_MAP.items():
-        m = pat.match(s)
-        if m:
-            return tpl.format(**m.groupdict())
+    db_path = get_db_path()
+    if not os.path.exists(db_path):
+        # Fallback or log error so the app doesn't crash
+        return None
+
+    try:
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        cur.execute("SELECT pattern, template FROM canon_mappings")
+        mappings = cur.fetchall()
+        conn.close()
+
+        for pattern_str, template in mappings:
+            pat = re.compile(pattern_str, re.I)
+            m = pat.match(s)
+            if m:
+                return template.format(**m.groupdict())
+    except sqlite3.Error:
+        return None
     return None
 
 def canonize_units(units: Iterable[str]) -> Tuple[Set[str], List[str]]:

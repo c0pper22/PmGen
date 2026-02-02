@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import sys
+from PyQt6.QtCore import QStandardPaths
 import re
 import logging
 from contextlib import contextmanager
@@ -42,6 +44,13 @@ try:
 except Exception:  # pragma: no cover
     keyring = None
 
+def get_db_path():
+    """Returns the path to the database in the user's AppData folder."""
+    app_data = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation)
+    if not os.path.exists(app_data):
+        os.makedirs(app_data)
+    # Ensure the filename matches what your migration script created
+    return os.path.join(app_data, "catalog_manager.db")
 
 def get_saved_username() -> Optional[str]:
     if not keyring:
