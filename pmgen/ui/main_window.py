@@ -307,7 +307,7 @@ class MainWindow(QMainWindow):
             bulk_btn.setMenu(bulk_menu)
 
             drag_left = DragRegion(self)
-            title = TitleDragLabel("PmGen", self)
+            title = TitleDragLabel("PmGen 2.7.2", self)
             drag_right = DragRegion(self)
 
             btn_update = QToolButton(); btn_update.setObjectName("DialogBtn")
