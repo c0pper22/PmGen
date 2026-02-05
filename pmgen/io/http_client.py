@@ -114,7 +114,16 @@ def login(sess: requests.Session) -> None:
     """
     username = get_saved_username()
     password = get_saved_password()
+
+    log.info(f"Attempting login flow for user: {username}")
     
+    try:
+        r = sess.get(LOGIN_PAGE, headers=HEADERS_COMMON, timeout=30)
+        r.raise_for_status()
+    except Exception as e:
+        log.error(f"Failed to reach login page: {e}")
+        raise
+
     if not (username and password):
         raise RuntimeError("No saved credentials. Use Settings -> Credentials...")
 
@@ -141,9 +150,12 @@ def login(sess: requests.Session) -> None:
         "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
     }
     
-    log.info("Submitting login POST (no credentials logged).")
-    r = sess.post(LOGIN_POST, data=form, headers=headers, timeout=30)
-    r.raise_for_status()
+    try:
+        r = sess.post(LOGIN_POST, data=form, headers=headers, timeout=30)
+        r.raise_for_status()
+    except Exception as e:
+        log.error(f"Login POST failed: {e}")
+        raise
     
     if r.headers.get("Content-Type", "").lower().startswith("application/json"):
         try:

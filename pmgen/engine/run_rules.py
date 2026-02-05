@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Dict, List, Optional, Tuple, Set
 import re
+import logging
 from pmgen.types import PmItem, PmReport, Selection
 
 
@@ -55,8 +56,8 @@ def run_rules(report, threshold, life_basis, threshold_enabled=True) -> Selectio
         try:
             rule.apply(ctx)
         except Exception as e:
-            print(f"Rule {rule.name} failed: {e}")
-            
+            logging.error(f"Rule '{rule.name}' failed on model '{ctx.model}': {e}", exc_info=True)
+            ctx.alerts.append(f"Internal Error: Rule {rule.name} failed.")
 
     due = [f for f in ctx.findings.values() if f.due]
     watch = [f for f in ctx.findings.values() if not f.due and f.life_used > 0.95]

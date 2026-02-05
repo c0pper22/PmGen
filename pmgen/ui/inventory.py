@@ -2,6 +2,8 @@ import os
 import io
 import numpy as np
 import pandas as pd
+import logging
+from pmgen.system.wrappers import safe_slot
 from PyQt6.QtCore import Qt, QAbstractTableModel, QStandardPaths, QModelIndex
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (
@@ -287,7 +289,8 @@ class InventoryTab(QWidget):
         # 3. Attempt to restore previous session data
         self._load_from_cache()
 
-    def _add_new_row(self):
+    @safe_slot
+    def _add_new_row(self, *args):
         """
         Adds a row to the model and scrolls to it.
         """
@@ -296,7 +299,8 @@ class InventoryTab(QWidget):
         # Scroll to bottom
         self.table_view.scrollToBottom()
 
-    def _delete_selected(self):
+    @safe_slot
+    def _delete_selected(self, *args):
         """
         Gets the selected rows from the view and asks the model to remove them.
         """
@@ -363,7 +367,8 @@ class InventoryTab(QWidget):
         else:
             self.lbl_total.setText("Total Value: $0.00")
 
-    def _load_csv(self):
+    @safe_slot
+    def _load_csv(self, *args):
         path, _ = QFileDialog.getOpenFileName(self, "Open Inventory CSV", "", "CSV Files (*.csv);;All Files (*.*)")
         if not path:
             return

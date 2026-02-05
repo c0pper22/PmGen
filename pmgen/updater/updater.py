@@ -5,7 +5,8 @@ import subprocess
 import zipfile
 import shutil
 import tempfile
-import time
+import datetime
+import logging
 from packaging import version
 from PyQt6.QtCore import QObject, pyqtSignal
 
@@ -27,6 +28,7 @@ class UpdateWorker(QObject):
     error_occurred = pyqtSignal(str)
 
     def check_updates(self):
+        logging.info("Checking for updates via GitHub API...")
         url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
         try:
             response = requests.get(url, headers=HEADERS, timeout=10)
@@ -36,6 +38,7 @@ class UpdateWorker(QObject):
             latest_tag = data['tag_name'].lstrip('v')
             
             if version.parse(latest_tag) > version.parse(CURRENT_VERSION):
+                logging.info(f"Update found: {latest_tag}")
                 download_url = None
                 for asset in data['assets']:
                     if asset['name'] == ASSET_NAME:
@@ -47,12 +50,15 @@ class UpdateWorker(QObject):
                 else:
                     self.error_occurred.emit(f"Update found ({latest_tag}), but asset is missing.")
             else:
+                logging.info("No update available.")
                 self.check_finished.emit(False, latest_tag, "")
                 
         except Exception as e:
-            self.error_occurred.emit(f"Update check failed: {str(e)}")
+            logging.error(f"Update check failed: {e}")
+            self.error_occurred.emit(str(e))
 
     def download_update(self, url):
+        logging.info(f"Downloading update from: {url}")
         try:
             temp_dir = tempfile.gettempdir()
             zip_path = os.path.join(temp_dir, "pmgen_update.zip")

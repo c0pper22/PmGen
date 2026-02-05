@@ -1,24 +1,22 @@
-
 from __future__ import annotations
 import sys
 import shutil
 import os
+import logging # Import logging
 from pmgen.io.http_client import get_db_path
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QCoreApplication
 
+# --- NEW IMPORTS ---
+from pmgen.system.diagnostics import setup_logging, install_crash_handlers
+
 os.environ.setdefault("QT_AUTO_SCREEN_SCALE_FACTOR", "1")
 
-from PyQt6.QtWidgets import QApplication
-
 def bootstrap_database():
-    target_path = get_db_path() # User's AppData path
-    
-    # 1. If DB already exists in AppData, do nothing
+    target_path = get_db_path()
     if os.path.exists(target_path):
         return
 
-    # 2. Determine where the 'master' database lives
     if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
         base_dir = sys._MEIPASS
     elif getattr(sys, 'frozen', False):
@@ -31,26 +29,40 @@ def bootstrap_database():
     if os.path.exists(source_path):
         try:
             shutil.copy2(source_path, target_path)
-            print(f"Successfully bootstrapped database to {target_path}")
+            logging.info(f"Successfully bootstrapped database to {target_path}") 
         except Exception as e:
-            print(f"Error copying database: {e}")
-    else:
-        # Debug helper: print the absolute path where it LOOKED for the file
-        print(f"Critical: Master database not found at {os.path.abspath(source_path)}")
+            logging.error(f"Error copying database: {e}") 
+        logging.critical(f"Master database not found at {os.path.abspath(source_path)}")
 
 def main() -> int:
-    """PmGen GUI entry point."""
-    app = QApplication(sys.argv)
-    QCoreApplication.setOrganizationName("PmGen")
-    QCoreApplication.setOrganizationDomain("pmgen.local")
-    QCoreApplication.setApplicationName("PmGen 2.0")
-    bootstrap_database()
-    from pmgen.ui.main_window import MainWindow, apply_static_theme
-    apply_static_theme(app)
+    setup_logging()
+    install_crash_handlers()
 
-    win = MainWindow()
-    win.show()
-    return app.exec()
+    """PmGen GUI entry point."""
+    try:
+        app = QApplication(sys.argv)
+        QCoreApplication.setOrganizationName("PmGen")
+        QCoreApplication.setOrganizationDomain("pmgen.local")
+        QCoreApplication.setApplicationName("PmGen 2.0")
+        
+        bootstrap_database()
+        
+        from pmgen.ui.main_window import MainWindow, apply_static_theme
+        apply_static_theme(app)
+
+        win = MainWindow()
+        win.show()
+        
+        logging.info("Application loop starting.")
+        exit_code = app.exec()
+        logging.info(f"Application closing with code {exit_code}")
+        return exit_code
+
+    except Exception:
+        # This catch-all handles errors during app startup (e.g., ImportError, init failure)
+        # The install_crash_handlers should catch most, but this is a final safety net.
+        logging.exception("Critical failure during application startup.")
+        raise
 
 if __name__ == "__main__":
     raise SystemExit(main())

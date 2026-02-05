@@ -1,6 +1,7 @@
 from __future__ import annotations
 import sys, os, re
 import requests
+import logging
 from collections import deque
 from PyQt6.QtCore import (
     Qt, QSize, QPoint, QRect, QEvent, QRegularExpression, 
@@ -19,6 +20,7 @@ from PyQt6.QtWidgets import (
 )
 
 # Imports from our new split files
+from pmgen.system.wrappers import safe_slot
 from .theme import apply_static_theme
 from .components import (
     DragRegion, TitleDragLabel, FramelessDialog, CustomMessageBox, ResizeState
@@ -541,10 +543,14 @@ class MainWindow(QMainWindow):
         elif not want and have:
             self._out_highlighter.setDocument(None); self._out_highlighter.deleteLater(); self._out_highlighter = None
             self.editor.setPlainText(self.editor.toPlainText())
-
-    def _on_generate_clicked(self):
+    
+    @safe_slot
+    def _on_generate_clicked(self, *args):
         le = self._id_combo.lineEdit()
         text = le.text().strip().upper()
+
+        logging.info(f"User requested generation for serial: {text}")
+
         if not text:
             CustomMessageBox.warn(self, "Missing Serial", "Please Enter A Serial Number", self._icon_dir)
             return
@@ -583,11 +589,17 @@ class MainWindow(QMainWindow):
             )
             self.editor.setPlainText(out)
             self._apply_colorized_highlighter()
+            logging.info("Report generation successful.")
         except Exception as e:
+            logging.error(f"Generation failed: {e}")
             CustomMessageBox.warn(self, "Generate failed", str(e), self._icon_dir)
 
-    def _start_bulk(self):
+    @safe_slot
+    def _start_bulk(self, *args):
         cfg = self._get_bulk_config(); cfg.show_all = self._get_show_all()
+
+        logging.info(f"Starting Bulk Run. TopN={cfg.top_n}, Pool={cfg.pool_size}, Out={cfg.out_dir}")
+
         self.editor.clear()
         self._log_queue.append(f"[Info] Bulk Starting… (Top N={cfg.top_n}, Pool={cfg.pool_size})")
 
@@ -644,8 +656,8 @@ class MainWindow(QMainWindow):
     # =========================================================================
     #  Dialogs
     # =========================================================================
-
-    def _open_due_threshold_dialog(self):
+    @safe_slot
+    def _open_due_threshold_dialog(self, *args):
         dlg = FramelessDialog(self, "Optional Threshold", self._icon_dir)
         top = QLabel("Items over 100% life are always DUE.\nOptionally enable a lower due threshold.", dlg)
         top.setObjectName("DialogLabel")
@@ -673,8 +685,9 @@ class MainWindow(QMainWindow):
         r1 = QHBoxLayout(); r1.addWidget(slider, 1); r1.addWidget(pct_box); dlg._content_layout.addLayout(r1)
         r2 = QHBoxLayout(); r2.addStretch(1); r2.addWidget(save_btn); dlg._content_layout.addLayout(r2)
         dlg.exec()
-
-    def _open_login_dialog(self):
+    
+    @safe_slot
+    def _open_login_dialog(self, *args):
         dlg = FramelessDialog(self, "Login", self._icon_dir)
         u_in = QLineEdit(dlg); u_in.setObjectName("DialogInput"); u_in.setPlaceholderText("Username")
         if (last_user := QSettings().value(self.AUTH_USERNAME_KEY, "", str)): u_in.setText(last_user)
@@ -688,6 +701,9 @@ class MainWindow(QMainWindow):
         def _do_login():
             u, p = u_in.text().strip(), p_in.text()
             if not u or not p: return
+
+            logging.info(f"Attempting manual login for user: {u}")
+
             btn_login.setEnabled(False); self.user_label.setText("Signing in…"); self.editor.appendPlainText(f"[Auto-Login] Attempting as {u}…")
             try:
                 from pmgen.io import http_client as hc
@@ -711,7 +727,8 @@ class MainWindow(QMainWindow):
         row = QHBoxLayout(); row.addWidget(remember); row.addStretch(1); row.addWidget(btn_login)
         dlg._content_layout.addLayout(row); dlg.exec()
 
-    def _open_life_basis_dialog(self):
+    @safe_slot
+    def _open_life_basis_dialog(self, *args):
         dlg = FramelessDialog(self, "Life Basis", self._icon_dir)
         lbl = QLabel("Choose counter basis (fallback to other if missing).", dlg); lbl.setObjectName("DialogLabel")
         box = QComboBox(dlg); box.setObjectName("DialogInput"); box.addItems(["Page", "Drive"])
@@ -722,7 +739,8 @@ class MainWindow(QMainWindow):
         r = QHBoxLayout(); r.addStretch(1); r.addWidget(btn); dlg._content_layout.addLayout(r)
         dlg.exec()
 
-    def _open_bulk_settings(self):
+    @safe_slot
+    def _open_bulk_settings(self, *args):
         cfg = self._get_bulk_config()
         s = QSettings()
         dlg = FramelessDialog(self, "Bulk Settings", self._icon_dir)
@@ -833,7 +851,9 @@ class MainWindow(QMainWindow):
             self._signed_in = False; self._current_user = ""; self._update_auth_ui()
             self.editor.appendPlainText(f"[Auto-Login] {u} — failed: {e}")
 
-    def _logout(self):
+    @safe_slot
+    def _logout(self, *args):
+        logging.info("User requested logout.")
         QSettings().setValue(self.AUTH_REMEMBER_KEY, False); QSettings().setValue(self.AUTH_USERNAME_KEY, "")
         try:
             from pmgen.io import http_client as hc
