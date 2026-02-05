@@ -13,7 +13,7 @@ from PyQt6.QtCore import QObject, pyqtSignal
 # --- CONFIGURATION ---
 GITHUB_REPO = "c0pper22/PmGen"
 ASSET_NAME = "PmGen.zip" 
-CURRENT_VERSION = "2.7.3"
+CURRENT_VERSION = "2.7.4"
 HEADERS = {'User-Agent': f"PmGen-Updater/{CURRENT_VERSION}"}
 
 class UpdateWorker(QObject):

@@ -566,6 +566,7 @@ class MainWindow(QMainWindow):
         try:
             from pmgen.io.http_client import get_service_file_bytes
             data = get_service_file_bytes(text, "PMSupport", sess=self._session)
+            print("DEBUG: Download finished! Size:", len(data) if data else 0, flush=True)
         except Exception:
             try:
                 if hasattr(self, "act_login"): self.act_login.trigger()
@@ -777,10 +778,10 @@ class MainWindow(QMainWindow):
         sp_min_age.setValue(int(s.value("bulk/unpack_min_months", 0, int)))
 
         # Logic to disable spinboxes if checkbox is off
-        cb_max_age.toggled.connect(sp_max_age.setEnabled)
-        cb_min_age.toggled.connect(sp_min_age.setEnabled)
-        sp_max_age.setEnabled(cb_max_age.isChecked())
-        sp_min_age.setEnabled(cb_min_age.isChecked())
+        # cb_max_age.toggled.connect(sp_max_age.setEnabled)
+        # cb_min_age.toggled.connect(sp_min_age.setEnabled)
+        # sp_max_age.setEnabled(cb_max_age.isChecked())
+        # sp_min_age.setEnabled(cb_min_age.isChecked())
 
         btn_save = QPushButton("Save", dlg)
         def _save():
@@ -807,8 +808,8 @@ class MainWindow(QMainWindow):
         l.addWidget(QLabel("Blacklist:", dlg)); l.addWidget(bl_edit)
         
         # Add the two filter rows
-        r_max = QHBoxLayout(); r_max.addWidget(cb_max_age); r_max.addStretch(1); r_max.addWidget(sp_max_age); l.addLayout(r_max)
         r_min = QHBoxLayout(); r_min.addWidget(cb_min_age); r_min.addStretch(1); r_min.addWidget(sp_min_age); l.addLayout(r_min)
+        r_max = QHBoxLayout(); r_max.addWidget(cb_max_age); r_max.addStretch(1); r_max.addWidget(sp_max_age); l.addLayout(r_max)
         
         r_btn = QHBoxLayout(); r_btn.addStretch(1); r_btn.addWidget(btn_save); l.addLayout(r_btn)
         dlg.exec()

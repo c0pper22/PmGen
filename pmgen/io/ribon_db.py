@@ -87,6 +87,8 @@ def query_parts_rows(parts_name_com_list: Iterable[str]) -> Dict[str, Dict[str, 
     out: Dict[str, Dict[str, object]] = {}
     if not codes:
         return out
+    
+    print(f"DEBUG: About to query DB for {len(codes)} items...", flush=True)
 
     with _DB_LOCK:
         cn = _get_db_conn()
