@@ -10,6 +10,8 @@ LP    = r"\(?"
 RP    = r"\)?"
 COLOR = r"(?P<chan>K|C|M|Y)"
 
+_MAPPINGS_CACHE: Optional[List[Tuple[str, str]]] = None
+
 CANON = types.SimpleNamespace(
     # Color parts (order doesn’t matter; names used for dynamic lookup)
     Y_DRUM = "DRUM[Y]",
@@ -191,14 +193,13 @@ CANON_MAP: Dict[Pattern[str], str] = {
     re.compile(r"^HEAT\s+ROLLER$", re.I):                            CANON.HEAT_ROLLER,
 }
 
-def canon_unit(raw: str) -> Optional[str]:
-    s = re.sub(r"\s+", " ", raw.strip())
-    s = s.replace("（", "(").replace("）", ")")
-
+def reload_mappings_cache():
+    """Forces a reload of the mappings from DB."""
+    global _MAPPINGS_CACHE
     db_path = get_db_path()
     if not os.path.exists(db_path):
-        # Fallback or log error so the app doesn't crash
-        return None
+        _MAPPINGS_CACHE = []
+        return
 
     try:
         conn = sqlite3.connect(db_path)
@@ -206,14 +207,32 @@ def canon_unit(raw: str) -> Optional[str]:
         cur.execute("SELECT pattern, template FROM canon_mappings")
         mappings = cur.fetchall()
         conn.close()
+        _MAPPINGS_CACHE = mappings
+    except sqlite3.Error:
+        _MAPPINGS_CACHE = []
 
-        for pattern_str, template in mappings:
+def get_cached_mappings() -> List[Tuple[str, str]]:
+    """Returns the cached mappings, loading them if necessary."""
+    global _MAPPINGS_CACHE
+    if _MAPPINGS_CACHE is None:
+        reload_mappings_cache()
+    return _MAPPINGS_CACHE or []
+
+def canon_unit(raw: str) -> Optional[str]:
+    s = re.sub(r"\s+", " ", raw.strip())
+    s = s.replace("（", "(").replace("）", ")")
+
+    mappings = get_cached_mappings()
+
+    for pattern_str, template in mappings:
+        try:
             pat = re.compile(pattern_str, re.I)
             m = pat.match(s)
             if m:
                 return template.format(**m.groupdict())
-    except sqlite3.Error:
-        return None
+        except re.error:
+            continue
+            
     return None
 
 def canonize_units(units: Iterable[str]) -> Tuple[Set[str], List[str]]:
