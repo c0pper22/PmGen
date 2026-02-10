@@ -147,7 +147,7 @@ class BulkRunner(QObject):
             os.makedirs(final_out_dir, exist_ok=True)
             # -----------------------------------------------
 
-            from pmgen.io.http_client import SessionPool, get_serials_after_login, get_service_file_bytes
+            from pmgen.io.http_client import SessionPool, get_serials_after_login, get_service_file_bytes, get_unpacking_date
             from pmgen.parsing.parse_pm_report import parse_pm_report
             from pmgen.engine.run_rules import run_rules
             from pmgen.engine.single_report import create_pdf_report
@@ -196,7 +196,10 @@ class BulkRunner(QObject):
             def work(serial: str):
                 try:
                     with pool.acquire() as sess:
+                        # 1. Fetch PM bytes
                         blob = get_service_file_bytes(serial, "PMSupport", sess=sess)
+                        # 2. Fetch Unpacking Date (08 mode)
+                        unpack_date = get_unpacking_date(serial, sess=sess)
                     
                     report = parse_pm_report(blob)
                     selection = run_rules(report, threshold=thr, life_basis=basis, threshold_enabled=thr_enabled)
@@ -207,6 +210,7 @@ class BulkRunner(QObject):
                     # Calculate best usage percentage
                     best_used = max([float(get_val(f, "life_used", 0.0) or 0.0) for f in all_items], default=0.0)
 
+                    # Pass unpacking_date to the PDF creator
                     create_pdf_report(
                         report=report,
                         selection=selection,
@@ -214,9 +218,11 @@ class BulkRunner(QObject):
                         life_basis=basis,
                         show_all=show_all,
                         out_dir=final_out_dir,
-                        threshold_enabled=thr_enabled
+                        threshold_enabled=thr_enabled,
+                        unpacking_date=unpack_date 
                     )
 
+                    # Return data for the Final Summary
                     return {
                         "serial": (report.headers or {}).get("serial") or serial,
                         "model": (report.headers or {}).get("model")  or "Unknown",
@@ -226,6 +232,7 @@ class BulkRunner(QObject):
                         "flat": meta.get("selection_pn", {}) or {},
                         "kit_by_pn": meta.get("kit_by_pn", {}) or {},
                         "due_sources": meta.get("due_sources", {}) or {},
+                        "unpacking_date": unpack_date 
                     }
                 except Exception as e:
                     return {"serial": serial, "error": str(e), "trace": traceback.format_exc()}

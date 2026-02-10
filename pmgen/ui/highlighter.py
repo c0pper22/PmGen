@@ -17,6 +17,7 @@ class OutputHighlighter(QSyntaxHighlighter):
         return fmt
 
     def _build_formats(self):
+        self.fmt_normal     = self._mkfmt("#ffffff", bold=True)
         self.fmt_header     = self._mkfmt("#7aa2f7", bold=True)
         self.fmt_rule       = self._mkfmt("#444444")
         self.fmt_muted      = self._mkfmt("#888888", italic=True)
@@ -43,29 +44,42 @@ class OutputHighlighter(QSyntaxHighlighter):
         self.fmt_kv_label         = self._mkfmt("#1c94d5", bold=True)
         self.fmt_kv_value         = self._mkfmt("#e0af68", bold=True)
         
-        self.fmt_bulk             = self._mkfmt("#5fd0e3", bold=True)
-        self.fmt_info             = self._mkfmt("#f5db30", bold=True)
+        self.fmt_bulk             = self._mkfmt("#97eb80ff", bold=True)
+        self.fmt_info             = self._mkfmt("#D8B30C", bold=True)
 
         self.fmt_pct_low          = self._mkfmt("#40ed68", bold=True)
         self.fmt_pct_mid          = self._mkfmt("#f79346", bold=True)
         self.fmt_pct_high         = self._mkfmt("#d83d37", bold=True)
 
-        self.fmt_bulk_serial      = self._mkfmt("#b28af3", bold=True)
+        self.fmt_bulk_serial      = self._mkfmt("#81A1C1", bold=True)
         self.fmt_bulk_ok          = self._mkfmt("#40ed68", bold=True)
         self.fmt_bulk_filtered    = self._mkfmt("#d83d37", bold=True)
 
     def highlightBlock(self, text: str):
+        # --- CHANGE: Apply the default White/Bold to the whole line first ---
+        # Any specific matches below will overwrite this, but "gaps" will remain White/Bold.
+        self.setFormat(0, len(text), self.fmt_normal)
+
         t = text.strip()
 
+        # --- CHANGE 1: Only highlight the [Auto-Login] tag ---
         if "[Auto-Login]" in t:
+            # This overwrites the bold white with the muted style
             self.setFormat(0, len(text), self.fmt_muted)
             return
         
         if "[Info]" in t:
-            self.setFormat(0, len(text), self.fmt_info)
+            self.setFormat(0, len(text), self.fmt_info) 
+            
+        # --- CHANGE 3: Only highlight the [Bulk] tag ---
+        tag_bulk = "[Bulk]"
+        if tag_bulk in t:
+            # 1. Color just the [Bulk] tag
+            start_index = text.find(tag_bulk)
+            if start_index >= 0:
+                self.setFormat(start_index, len(tag_bulk), self.fmt_bulk)
 
-        if "[Bulk]" in t:
-            self.setFormat(0, len(text), self.fmt_bulk)
+            # 2. Handle the specific regex coloring inside the line (Percentages)
             pct_re = re.compile(r"(?P<num>\d+(?:\.\d+)?)%")
             for m in pct_re.finditer(t):
                 val_str = m.group("num")
@@ -81,18 +95,23 @@ class OutputHighlighter(QSyntaxHighlighter):
                     fmt = self.fmt_pct_high
                 self.setFormat(m.start(), m.end() - m.start(), fmt)
 
+            # 3. Handle OK
             ok_re = re.compile(r"\bOK\b", re.IGNORECASE)
             for m in ok_re.finditer(t):
                 self.setFormat(m.start(), m.end() - m.start(), self.fmt_bulk_ok)
 
+            # 4. Handle FILTERED
             filtered_re = re.compile(r"\bFILTERED\b", re.IGNORECASE)
             for m in filtered_re.finditer(t):
                 self.setFormat(m.start(), m.end() - m.start(), self.fmt_bulk_filtered)
 
+            # 5. Handle Serial Numbers
             serial_re = re.compile(r"\b[A-Z0-9]{5,10}\b")
             for m in serial_re.finditer(t):
                 self.setFormat(m.start(), m.end() - m.start(), self.fmt_bulk_serial)
             return
+
+        # --- The rest of the logic remains unchanged ---
 
         if t in ("Final Parts", "Most-Due Items", "Counters", "End of Report"):
             self.setFormat(0, len(text), self.fmt_header)
@@ -118,7 +137,9 @@ class OutputHighlighter(QSyntaxHighlighter):
         if t.startswith("• ") or "→ DUE" in t:
             m = re.match(r"^\s*•\s+(?P<canon>.+?)\s+—\s+(?P<pct>\S+)(?:\s*→\s*(?P<due>DUE))?\s*$", t)
             if m:
-                self.setFormat(0, len(text), self.fmt_due_row_base)
+                # IMPORTANT: Overwrite the base white with the grey base for this row type
+                self.setFormat(0, len(text), self.fmt_due_row_base) 
+                
                 left_ws = len(text) - len(text.lstrip())
                 def _apply(name, fmt):
                     if name in m.groupdict() and m.group(name):

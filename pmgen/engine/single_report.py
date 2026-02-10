@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Optional, Any, Iterable, List
+from typing import Optional, Any, Iterable, List, Union
 
 from pmgen.engine.run_rules import run_rules
 from pmgen.types import PmReport, PmItem
@@ -12,7 +12,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.platypus.flowables import KeepTogether, HRFlowable
 
-from datetime import datetime
+from datetime import datetime, date
 import os
 import re
 
@@ -57,7 +57,8 @@ def format_report(
     threshold: float,
     life_basis: str,
     show_all: bool = False,
-    threshold_enabled: bool = True
+    threshold_enabled: bool = True,
+    unpacking_date: Optional[Union[str, date]] = None
 ) -> str:
     """
     Pretty-print the single-report result.
@@ -75,11 +76,11 @@ def format_report(
 
     # ---------- header line ----------
     hdrs = getattr(report, "headers", {}) or {}
-    model  = hdrs.get("model", "Unknown")
+    model = hdrs.get("model", "Unknown")
     serial = hdrs.get("serial", "Unknown")
 
     dt_raw = hdrs.get("date")
-    dt_str = dt_raw if isinstance(dt_raw, str) and dt_raw.strip() else datetime.now().strftime("%m-%d-%Y %H:%M")
+    dt_str = dt_raw if isinstance(dt_raw, str) and dt_raw.strip() else datetime.now().strftime("%m-%d-%Y")
 
     # ---------- counters ----------
     counters_lines: List[str] = []
@@ -193,6 +194,8 @@ def format_report(
     lines: List[str] = []
     lines.append("───────────────────────────────────────────────────────────────")
     lines.append(f"Model: {model}  |  Serial: {serial}  |  Date: {dt_str}")
+    if unpacking_date:
+        lines.append(f"Unpacking Date: {unpacking_date}")
 
     if alerts:
         lines.append("")
@@ -265,12 +268,13 @@ def _zebra(tbl, rows):
 def create_pdf_report(
     *, report, selection, threshold: float, life_basis: str,
     show_all: bool = False, out_dir: str = ".", threshold_enabled: bool = True,
+    unpacking_date: Optional[Union[str, date]] = None
 ):
     hdrs = getattr(report, "headers", {}) or {}
     model = hdrs.get("model", "Unknown")
     serial = hdrs.get("serial", "Unknown")
     dt_raw = hdrs.get("date")
-    dt_str = dt_raw if isinstance(dt_raw, str) and dt_raw.strip() else datetime.now().strftime("%m-%d-%Y %H:%M")
+    dt_str = dt_raw if isinstance(dt_raw, str) and dt_raw.strip() else datetime.now().strftime("%m-%d-%Y")
 
     # Counters
     c = getattr(report, "counters", {}) or {}
@@ -357,6 +361,9 @@ def create_pdf_report(
 
     story = []
     story.append(Paragraph(f"Model: {model}  |  Serial: {serial}  |  Date: {dt_str}", styles["H1"]))
+    if unpacking_date:
+        story.append(Paragraph(f"Unpacking Date: {unpacking_date}", styles["Meta"]))
+    
     story.append(_hline())
     thr_text = f"{threshold*100:.1f}%" if threshold_enabled else "100.0%"
     story.append(Paragraph(f"Due threshold: {thr_text}  •  Basis: {life_basis.upper()}", styles["Meta"]))
@@ -428,6 +435,7 @@ def generate_from_bytes(
     life_basis: str,
     show_all: bool = False,
     threshold_enabled: bool = True,
+    unpacking_date: Optional[Union[str, date]] = None
 ) -> str:
     report: PmReport = parse_pm_report(pm_pdf_bytes)
     selection = run_rules(
@@ -443,4 +451,5 @@ def generate_from_bytes(
         life_basis=life_basis,
         show_all=show_all,
         threshold_enabled=threshold_enabled,
+        unpacking_date=unpacking_date,
     )

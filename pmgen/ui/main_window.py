@@ -563,15 +563,28 @@ class MainWindow(QMainWindow):
         except ImportError: from pmgen.engine import generate_from_bytes
 
         data = None
+        unpack_date = None
+
         try:
-            from pmgen.io.http_client import get_service_file_bytes
+            from pmgen.io.http_client import get_service_file_bytes, get_unpacking_date
+            
+            # Fetch PM bytes
             data = get_service_file_bytes(text, "PMSupport", sess=self._session)
+            
+            # NEW: Fetch unpacking date (optional)
+            try:
+                unpack_date = get_unpacking_date(text, sess=self._session)
+            except Exception as e:
+                logging.warning(f"Could not fetch unpacking date for {text}: {e}")
+
             print("DEBUG: Download finished! Size:", len(data) if data else 0, flush=True)
         except Exception:
             try:
                 if hasattr(self, "act_login"): self.act_login.trigger()
                 from pmgen.io.http_client import get_service_file_bytes as _refetch
+                # Retry fetching report
                 data = _refetch(text, "PMSupport")
+                # We skip retrying unpack_date here to keep fallback simple/fast
             except Exception as e2:
                 CustomMessageBox.warn(self, "Online fetch failed", str(e2), self._icon_dir)
 
@@ -587,6 +600,7 @@ class MainWindow(QMainWindow):
                 life_basis=self._get_life_basis(),
                 show_all=self._get_show_all(),
                 threshold_enabled=self._get_threshold_enabled(),
+                unpacking_date=unpack_date  # Pass the date here
             )
             self.editor.setPlainText(out)
             self._apply_colorized_highlighter()
