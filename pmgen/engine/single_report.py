@@ -49,6 +49,11 @@ def _collect_all_findings(selection, show_all: bool):
     out.sort(key=lambda x: (getattr(x, "life_used", None) or 0.0), reverse=True)
     return out
 
+def _seperatorLine(lines) -> None:
+    """
+    adds seperator line to QtEditor line buffer.
+    """
+    lines.append("─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────")
 
 def format_report(
     *,
@@ -58,7 +63,8 @@ def format_report(
     life_basis: str,
     show_all: bool = False,
     threshold_enabled: bool = True,
-    unpacking_date: Optional[Union[str, date]] = None
+    unpacking_date: Optional[Union[str, date]] = None,
+    alerts_enabled: bool = True
 ) -> str:
     """
     Pretty-print the single-report result.
@@ -150,7 +156,7 @@ def format_report(
 
     # Over-100% section
     final_lines.append("Final Parts — Over 100%")
-    final_lines.append("───────────────────────────────────────────────────────────────")
+    _seperatorLine(final_lines)
     final_lines.append("(Qty → Part Number → Unit )")
     final_lines.extend(over_rows if over_rows else ["(none)"])
     final_lines.append("")
@@ -158,7 +164,7 @@ def format_report(
     # Threshold-based section
     if thr_rows:
         final_lines.append("Final Parts — Threshold")
-        final_lines.append("───────────────────────────────────────────────────────────────")
+        _seperatorLine(final_lines)
         final_lines.append("(Qty → Part Number → Unit )")
         final_lines.extend(thr_rows)
         final_lines.append("")
@@ -167,7 +173,7 @@ def format_report(
     inv_lines = []
     if inv_matches:
         inv_lines.append("Inventory Matches (In Stock)")
-        inv_lines.append("───────────────────────────────────────────────────────────────")
+        _seperatorLine(inv_lines)
         inv_lines.append("(Matched Code → Needed → In Stock)")
         for m in inv_matches:
             code = m.get("code")
@@ -180,7 +186,7 @@ def format_report(
     miss_lines = []
     if inv_missing:
         miss_lines.append("Items to Order (Missing from Stock)")
-        miss_lines.append("───────────────────────────────────────────────────────────────")
+        _seperatorLine(miss_lines)
         miss_lines.append("(Code → Qty to Order)")
         for m in inv_missing:
             code = m.get("code")
@@ -192,12 +198,14 @@ def format_report(
 
     # ---------- assemble full text report ----------
     lines: List[str] = []
-    lines.append("───────────────────────────────────────────────────────────────")
-    lines.append(f"Model: {model}  |  Serial: {serial}  |  Date: {dt_str}")
+    _seperatorLine(lines)
+    
     if unpacking_date:
-        lines.append(f"Unpacking Date: {unpacking_date}")
+        lines.append(f"Model: {model}  |  Serial: {serial}  |  Last Reported: {dt_str} | Unpacking Date: {unpacking_date}")
+    else:
+        lines.append(f"Model: {model}  |  Serial: {serial}  |  Last Reported: {dt_str}")
 
-    if alerts:
+    if alerts and alerts_enabled:
         lines.append("")
         lines.append("!!! SYSTEM ALERTS !!!")
         for a in alerts:
@@ -214,7 +222,7 @@ def format_report(
 
     lines.append("")
     lines.append("Highest Wear Items")
-    lines.append("───────────────────────────────────────────────────────────────")
+    _seperatorLine(lines)
     lines.extend(most_due_rows if most_due_rows else ["(none)", ""])
     
     lines.append("")
@@ -228,9 +236,9 @@ def format_report(
         lines.extend(miss_lines)
 
     lines.append("")
-    lines.append("───────────────────────────────────────────────────────────────")
+    _seperatorLine(lines)
     lines.append("End of Report")
-    lines.append("───────────────────────────────────────────────────────────────")
+    _seperatorLine(lines)
 
     return "\n".join(lines)
 
@@ -268,7 +276,8 @@ def _zebra(tbl, rows):
 def create_pdf_report(
     *, report, selection, threshold: float, life_basis: str,
     show_all: bool = False, out_dir: str = ".", threshold_enabled: bool = True,
-    unpacking_date: Optional[Union[str, date]] = None
+    unpacking_date: Optional[Union[str, date]] = None,
+    alerts_enabled: bool = True
 ):
     hdrs = getattr(report, "headers", {}) or {}
     model = hdrs.get("model", "Unknown")
@@ -360,7 +369,7 @@ def create_pdf_report(
     styles.add(ParagraphStyle(name="MissHeader", parent=styles["Section"], textColor=colors.HexColor("#DC2626")))
 
     story = []
-    story.append(Paragraph(f"Model: {model}  |  Serial: {serial}  |  Date: {dt_str}", styles["H1"]))
+    story.append(Paragraph(f"Model: {model}  |  Serial: {serial}  |  Last Reported: {dt_str}", styles["H1"]))
     if unpacking_date:
         story.append(Paragraph(f"Unpacking Date: {unpacking_date}", styles["Meta"]))
     
@@ -370,10 +379,9 @@ def create_pdf_report(
     if parts: story.append(Paragraph("Counters: " + "  ".join(parts), styles["Meta"]))
     story.append(Spacer(1, 4))
 
-    if alerts:
+    if alerts and alerts_enabled:
         story.append(Paragraph("System Alerts", styles["AlertHeader"]))
         for alert in alerts:
-            # Bullet point symbol for clarity
             story.append(Paragraph(f"• {alert}", styles["AlertText"]))
         story.append(Spacer(1, 4))
         story.append(_hline(thickness=0.5, color=colors.red))
@@ -435,7 +443,8 @@ def generate_from_bytes(
     life_basis: str,
     show_all: bool = False,
     threshold_enabled: bool = True,
-    unpacking_date: Optional[Union[str, date]] = None
+    unpacking_date: Optional[Union[str, date]] = None,
+    alerts_enabled: bool = True
 ) -> str:
     report: PmReport = parse_pm_report(pm_pdf_bytes)
     selection = run_rules(
@@ -452,4 +461,5 @@ def generate_from_bytes(
         show_all=show_all,
         threshold_enabled=threshold_enabled,
         unpacking_date=unpacking_date,
+        alerts_enabled=alerts_enabled
     )

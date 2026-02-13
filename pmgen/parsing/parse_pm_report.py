@@ -126,12 +126,17 @@ def ParsePmReport(data: bytes) -> PmReport:
     # Title: prefer the PM SUPPORT header if present
     title = next((ln for ln in lines[:5] if ln.upper().startswith("PM SUPPORT CODE LIST")), lines[0])
 
-    # Report date: keep the original string (don’t parse). Heuristic search in first few lines.
     date_pat = re.compile(
-        r"(\d{1,2}[-/]\d{1,2}[-/]\d{2,4}(\s+\d{1,2}:\d{2}(:\d{2})?)?)"
-        r"|(\d{4}[-/]\d{1,2}[-/]\d{1,2}(\s+\d{1,2}:\d{2}(:\d{2})?)?)"
-    )
-    report_date = next((ln for ln in lines[:6] if date_pat.search(ln)), (lines[1] if len(lines) > 1 else ""))
+            r"(\d{1,2}[-/]\d{1,2}[-/]\d{2,4})"
+            r"|(\d{4}[-/]\d{1,2}[-/]\d{1,2})"
+        )
+    
+    report_date = ""
+    for ln in lines[:6]:
+        match = date_pat.search(ln)
+        if match:
+            report_date = match.group(0)
+            break
 
     # Model: look for e-STUDIO ####AC in the first few lines
     model_pat = re.compile(r"e[-\s]?studio\s*\d{4,5}ac", re.I)

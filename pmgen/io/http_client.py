@@ -7,14 +7,15 @@ import re
 import logging
 from contextlib import contextmanager
 from queue import LifoQueue, Empty
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Callable
 from datetime import date
 import datetime as _dt
 
 import requests
 import weakref
 from weakref import WeakSet
-from pmgen.ui.main_window import SERVICE_NAME
+# from pmgen.ui.main_window import SERVICE_NAME # Circular import risk, handled below
+SERVICE_NAME = "PmGen"
 from pmgen.io.fetch_serials import parse_serial_numbers
 
 # Logging (safe; excludes credentials)
@@ -49,7 +50,6 @@ def get_db_path():
     app_data = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation)
     if not os.path.exists(app_data):
         os.makedirs(app_data)
-    # Ensure the filename matches what your migration script created
     return os.path.join(app_data, "catalog_manager.db")
 
 def get_saved_username() -> Optional[str]:
@@ -97,7 +97,6 @@ def clear_credentials() -> None:
         except Exception:
             pass
 
-
 # --- Login helpers (unchanged behavior) ---
 
 def _extract_anti_forgery(html: str) -> str:
@@ -105,7 +104,6 @@ def _extract_anti_forgery(html: str) -> str:
     if not m:
         raise RuntimeError("Could not find __RequestVerificationToken on login page.")
     return m.group(1)
-
 
 def login(sess: requests.Session) -> None:
     """
@@ -116,7 +114,7 @@ def login(sess: requests.Session) -> None:
     password = get_saved_password()
 
     log.info(f"Attempting login flow for user: {username}")
-    
+
     try:
         r = sess.get(LOGIN_PAGE, headers=HEADERS_COMMON, timeout=30)
         r.raise_for_status()
@@ -142,39 +140,36 @@ def login(sess: requests.Session) -> None:
         "serial": "",
         "__RequestVerificationToken": token,
     }
-    
+
     headers = {
         **HEADERS_COMMON,
         "Origin": BASE_URL,
         "X-Requested-With": "XMLHttpRequest",
         "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
     }
-    
+
     try:
         r = sess.post(LOGIN_POST, data=form, headers=headers, timeout=30)
         r.raise_for_status()
     except Exception as e:
         log.error(f"Login POST failed: {e}")
         raise
-    
+
     if r.headers.get("Content-Type", "").lower().startswith("application/json"):
         try:
             js = r.json()
-            
             page_value = js.get("page", "")
             if "Invalid User Name or Password" in page_value:
                 raise RuntimeError("Login failed: Invalid User Name or Password.")
-                        
         except ValueError:
             log.warning("Response Content-Type was JSON but could not parse body.")
 
     chk = sess.get(DEVICE_INDEX, headers=HEADERS_COMMON, timeout=30, allow_redirects=True)
-    
+
     if "Log On" in chk.text or chk.status_code in (401, 403):
         raise RuntimeError("Login appears unsuccessful (got login page again).")
 
     log.info("Login successful.")
-
 
 # --- Session Pool (thread-safe) ---
 class SessionPool:
@@ -184,20 +179,37 @@ class SessionPool:
     """
     _all_pools: WeakSet = WeakSet()
 
-    def __init__(self, size: int):
+    def __init__(self, size: int, callback: Optional[Callable[[int, int], None]] = None):
+        """
+        Initialize the pool.
+        :param size: Number of sessions to create.
+        :param callback: Optional function(current, total) called after each login.
+        """
         size = max(1, int(size))
         self._q: LifoQueue[requests.Session] = LifoQueue()
-        for _ in range(size):
-            s = requests.Session()
-            login(s)
-            self._q.put(s)
+        
+        for i in range(size):
+            try:
+                s = requests.Session()
+                login(s)
+                self._q.put(s)
+                
+                # Notify progress if a callback is provided
+                if callback:
+                    callback(i + 1, size)
+            except Exception as e:
+                log.error(f"Failed to initialize session {i+1}/{size}: {e}")
+                # We continue even if one fails, though typically login() raises.
+                # If all fail, the pool might be empty or partially filled.
+
         self._size = size
+        
         # register this pool so we can close on logout
         try:
             SessionPool._all_pools.add(self)
         except Exception:
             pass
-        log.info(f"SessionPool initialized with {self._size} logged-in session(s).")
+        log.info(f"SessionPool initialized with {self._q.qsize()} logged-in session(s).")
 
     @contextmanager
     def acquire(self):
@@ -246,7 +258,6 @@ class SessionPool:
                 pass
         return n
 
-
 # --- Reusable HTTP helpers that accept an optional session ---
 def get_service_file_bytes(serial: str, option: str = "PMSupport",
                            sess: Optional[requests.Session] = None) -> bytes:
@@ -276,7 +287,6 @@ def get_service_file_bytes(serial: str, option: str = "PMSupport",
             except Exception:
                 pass
 
-
 def get_serials_after_login(sess: requests.Session) -> List[str]:
     """
     Navigate to Device Index and parse active serials.
@@ -288,7 +298,6 @@ def get_serials_after_login(sess: requests.Session) -> List[str]:
     serials: List[str] = []
     serials = parse_serial_numbers(html)
     return serials
-
 
 def _parse_unpacking_date_from_08_bytes(blob: bytes) -> Optional[date]:
     """
@@ -320,7 +329,6 @@ def _parse_unpacking_date_from_08_bytes(blob: bytes) -> Optional[date]:
                     break
     return None
 
-
 def get_unpacking_date(serial: str, sess: Optional[requests.Session] = None) -> Optional[date]:
     """
     Fetch the 08 Setting Mode file for *serial* and return the unpacking date (CODE=3612)
@@ -332,8 +340,43 @@ def get_unpacking_date(serial: str, sess: Optional[requests.Session] = None) -> 
         return None
     return _parse_unpacking_date_from_08_bytes(blob)
 
+def _parse_model_from_08_bytes(blob: bytes) -> str:
+    """
+    Look for the 08 Setting Mode "Model Name" (code 9486).
+    Example line: 9486, , TOSHIBA e-STUDIO5525AC,
+    """
+    try:
+        text = blob.decode(errors="ignore")
+        for line in text.splitlines():
+            if "9486" in line:
+                # Split by comma
+                parts = [p.strip() for p in line.split(",")]
 
-# --- NEW: server-side logout helper (best effort) ---
+                # Find where 9486 is located
+                if "9486" in parts:
+                    idx = parts.index("9486")
+                    # Look for the first non-empty value after the code
+                    for candidate in parts[idx+1:]:
+                        if candidate:
+                            return candidate
+    except Exception:
+        pass
+    return "Unknown"
+
+def get_device_info_08(serial: str, sess: Optional[requests.Session] = None) -> Dict:
+    """
+    Fetch the 08 Setting Mode file and return both Date and Model.
+    Returns: {'date': datetime.date | None, 'model': str}
+    """
+    try:
+        blob = get_service_file_bytes(serial, option="08", sess=sess)
+        return {
+            "date": _parse_unpacking_date_from_08_bytes(blob),
+            "model": _parse_model_from_08_bytes(blob)
+        }
+    except Exception:
+        return {"date": None, "model": "Unknown"}
+
 def server_side_logout(sess: Optional[requests.Session] = None) -> None:
     """Best-effort: call portal logout endpoint with a session (or temp one)."""
     s = sess or requests.Session()

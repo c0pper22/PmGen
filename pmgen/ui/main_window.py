@@ -3,6 +3,7 @@ import sys, os, re
 import requests
 import logging
 from collections import deque
+from datetime import datetime
 from PyQt6.QtCore import (
     Qt, QSize, QPoint, QRect, QEvent, QRegularExpression, 
     QCoreApplication, QSettings, QThread, pyqtSlot, QTimer, pyqtSignal
@@ -16,10 +17,11 @@ from PyQt6.QtWidgets import (
     QToolBar, QSizePolicy, QToolButton, QHBoxLayout, QLabel, QMenu,
     QPushButton, QLineEdit, QComboBox, QCheckBox, QSlider, 
     QSpinBox, QDoubleSpinBox, QFileDialog, QProgressBar, QCompleter,
-    QTabWidget
+    QTabWidget, QTableView, QHeaderView, QSplitter, QTabBar
 )
 
 # Imports from our new split files
+from pmgen.ui.bulk_model import BulkQueueModel
 from pmgen.system.wrappers import safe_slot
 from .theme import apply_static_theme
 from .components import (
@@ -43,6 +45,198 @@ BULK_DIR_KEY  = "bulk/out_dir"
 BULK_POOL_KEY = "bulk/pool_size"
 BULK_BLACKLIST_KEY = "bulk/blacklist"
 
+# =============================================================================
+#  NEW CLASS: BulkRunTab
+#  Encapsulates a single bulk run (UI + Logic + Thread)
+# =============================================================================
+class BulkRunTab(QWidget):
+    """
+    A self-contained tab for a single bulk processing job.
+    Owms its own model, view, and worker thread.
+    """
+    inspect_requested = pyqtSignal(str)  # Signal back to MainWindow to inspect a serial
+    finished = pyqtSignal()              # Signal when run is complete
+
+    def __init__(self, config: BulkConfig, runner_kwargs: dict, parent=None):
+        super().__init__(parent)
+        self.config = config
+        self.runner_kwargs = runner_kwargs
+        
+        self._thread: QThread | None = None
+        self._runner: BulkRunner | None = None
+        self._is_running = False
+
+        self._setup_ui()
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
+
+        # --- Top Bar: Progress & Status ---
+        top_bar = QHBoxLayout()
+        
+        self.status_label = QLabel("Ready")
+        self.status_label.setStyleSheet("font-weight: bold; color: #bbbbbb;")
+        
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setObjectName("ProgressBar")
+        self.progress_bar.setFixedHeight(12)
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(False)
+
+        top_bar.addWidget(self.status_label)
+        top_bar.addWidget(self.progress_bar, 1)
+        
+        # Add a "Stop" button
+        self.btn_stop = QPushButton("Stop")
+        self.btn_stop.setObjectName("BulkStopBtn")
+        self.btn_stop.setFixedHeight(24)
+        self.btn_stop.clicked.connect(self.stop)
+        self.btn_stop.setEnabled(False) # Enabled when running
+        top_bar.addWidget(self.btn_stop)
+
+        layout.addLayout(top_bar)
+
+        # --- Splitter: Table & Logs ---
+        splitter = QSplitter(Qt.Orientation.Vertical)
+        
+        # 1. The Table
+        self.view = QTableView()
+        self.model = BulkQueueModel()
+        self.view.setModel(self.model)
+        self.view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.view.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        self.view.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
+        self.view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.view.customContextMenuRequested.connect(self._on_context_menu)
+        
+        splitter.addWidget(self.view)
+
+        # 2. Local Log Window (so user sees errors for *this* run)
+        self.log_editor = QPlainTextEdit()
+        self.log_editor.setObjectName("MainEditor")
+        self.log_editor.setReadOnly(True)
+        self.log_editor.setMaximumBlockCount(1000)
+        self.log_editor.setPlaceholderText("Run logs will appear here...")
+        splitter.addWidget(self.log_editor)
+        
+        # Set initial sizes (Table gets most space)
+        splitter.setSizes([400, 50])
+        
+        layout.addWidget(splitter, 1)
+
+    def start(self):
+        if self._is_running: return
+        
+        self.model.clear()
+        self.log_editor.clear()
+        self.btn_stop.setEnabled(True)
+        self.status_label.setText("Initializing...")
+        
+        # Create Thread & Runner
+        self._thread = QThread()
+        self._runner = BulkRunner(self.config, **self.runner_kwargs)
+        self._runner.moveToThread(self._thread)
+
+        # Connect Signals
+        self._thread.started.connect(self._runner.run)
+        
+        self._runner.progress.connect(self._on_progress_text)
+        self._runner.progress_value.connect(self._on_progress_value)
+        self._runner.item_updated.connect(self._on_item_updated)
+        self._runner.finished.connect(self._on_finished)
+        
+        # Cleanup signals
+        self._runner.finished.connect(self._thread.quit)
+        self._runner.finished.connect(self._runner.deleteLater)
+        self._thread.finished.connect(self._thread.deleteLater)
+        self._thread.finished.connect(self._on_thread_gone)
+
+        self._thread.start()
+        self._is_running = True
+
+    def stop(self):
+        if self._is_running and self._thread:
+            self._log("[Info] Stop requested... (this may take a moment to finish current tasks)")
+            self._thread.requestInterruption()
+            self.btn_stop.setEnabled(False)
+
+    @safe_slot
+    def _on_context_menu(self, pos):
+        index = self.view.indexAt(pos)
+        if not index.isValid(): return
+        
+        serial = self.model.get_serial_at(index.row())
+        
+        menu = QMenu(self.view)
+        act_inspect = QAction("Inspect / Generate Single Report", self.view)
+        act_inspect.triggered.connect(lambda: self.inspect_requested.emit(serial))
+        menu.addAction(act_inspect)
+        
+        act_open = QAction("Open Output Folder", self.view)
+        act_open.triggered.connect(self._open_folder)
+        menu.addAction(act_open)
+
+        menu.exec(self.view.viewport().mapToGlobal(pos))
+
+    def _open_folder(self):
+        if self.config.out_dir and os.path.exists(self.config.out_dir):
+            os.startfile(self.config.out_dir)
+
+    # --- Worker Slots ---
+
+    @pyqtSlot(str)
+    def _on_progress_text(self, text):
+        self._log(text)
+        if text.startswith("[Bulk]"):
+            clean = text.replace("[Bulk]", "").strip()
+            self.status_label.setText(clean)
+        elif text.startswith("[Info]"):
+            clean = text.replace("[Info]", "").strip()
+            self.status_label.setText(clean)
+
+    @pyqtSlot(int, int)
+    def _on_progress_value(self, current, total):
+        self.progress_bar.setMaximum(total)
+        self.progress_bar.setValue(current)
+
+    @pyqtSlot(str, str, str, str, str)
+    def _on_item_updated(self, serial, status, result, model, unpack_date):
+        found = False
+        for r in range(self.model.rowCount()):
+            if self.model.get_serial_at(r) == serial:
+                self.model.update_status(serial, status, result, model, unpack_date)
+                found = True
+                break
+        
+        if not found:
+            self.model.add_item(serial, model)
+            self.model.update_status(serial, status, result, model, unpack_date)
+
+    @pyqtSlot(str)
+    def _on_finished(self, msg):
+        self._log(msg)
+        self.status_label.setText("Done")
+        self.progress_bar.setValue(self.progress_bar.maximum())
+        self.model.sort_by_status()
+        self.btn_stop.setEnabled(False)
+        self.finished.emit()
+
+    def _on_thread_gone(self):
+        self._thread = None
+        self._runner = None
+        self._is_running = False
+
+    def _log(self, text):
+        self.log_editor.appendPlainText(text)
+        self.log_editor.moveCursor(QTextCursor.MoveOperation.End)
+
+
+# =============================================================================
+#  MAIN WINDOW
+# =============================================================================
 
 class MainWindow(QMainWindow):
     # ---- PM settings Keys ----
@@ -51,6 +245,7 @@ class MainWindow(QMainWindow):
     LIFE_BASIS_KEY = "pm/life_basis"
     COLORIZED_KEY = "ui/colorized_output"
     SHOW_ALL_KEY = "ui/show_all_items"
+    ALERTS_ENABLED_KEY = "ui/alerts_enabled"
 
     BULK_UNPACK_KEY_ENABLE = "bulk/unpack_filter_enabled"
     BULK_UNPACK_KEY_EXTRA  = "bulk/unpack_extra_months"
@@ -115,9 +310,11 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
         self.tabs.setObjectName("MainTabs")
         self.tabs.setDocumentMode(True)
+        self.tabs.setTabsClosable(True) # ENABLE TAB CLOSING
+        self.tabs.tabCloseRequested.connect(self._on_tab_close_requested)
         self._vbox.addWidget(self.tabs)
 
-        # -- TAB 1: Home (Existing Functionality) --
+        # -- TAB 1: Home (Cleaned up: Just Editor and Bar) --
         self.tab_home = QWidget()
         self.tab_home.setObjectName("TabHome")
         home_layout = QVBoxLayout(self.tab_home)
@@ -128,36 +325,31 @@ class MainWindow(QMainWindow):
         self._secondary_bar = self._build_secondary_bar()
         home_layout.addWidget(self._secondary_bar, 0)
 
-        # Move Editor to Home Tab
+        # NOTE: Removed the shared stack and shared bulk views.
+        # Home Tab is now purely for Single Reports.
+
         self.editor = QPlainTextEdit()
         self.editor.setReadOnly(True)
         self.editor.setMaximumBlockCount(2000)
         self._apply_colorized_highlighter()
         self.editor.setObjectName("MainEditor")
         self.editor.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
-        self.editor.setMouseTracking(True)
+        
         home_layout.addWidget(self.editor, 1)
 
-        self.tabs.addTab(self.tab_home, "Home")
+        self.tabs.addTab(self.tab_home, "Single")
+        self.tabs.tabBar().setTabButton(0, QTabBar.ButtonPosition.RightSide, None)
 
         self.tab_tools = InventoryTab(self, icon_dir=self._icon_dir)
         self.tab_tools.setObjectName("TabInventory")
         self.tabs.addTab(self.tab_tools, "Inventory")
 
+        self.tabs.tabBar().setTabButton(1, QTabBar.ButtonPosition.RightSide, None)
+
         self.toolbar = self._build_toolbar()
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self.toolbar)
 
-        # Logging / Threads
-        self._log_queue = deque()
-        self._log_timer = QTimer(self)
-        self._log_timer.setInterval(40)
-        self._log_timer.timeout.connect(self._flush_log_queue)
-        self._log_timer.start()
-        self._log_batch_limit = 200
-        self._bulk_thread: QThread | None = None
-        self._bulk_runner = None
-
-        # --- UPDATER STATE ---
+        # UPDATER STATE
         self._update_thread: QThread | None = None
         self._update_worker: UpdateWorker | None = None
         self._update_silent_mode = False
@@ -177,9 +369,41 @@ class MainWindow(QMainWindow):
         self._rs = ResizeState()
 
     # =========================================================================
+    #  Tab Management
+    # =========================================================================
+    
+    def _on_tab_close_requested(self, index):
+        # Don't allow closing Home (0) or Inventory (1)
+        # Adjust indices if you rearrange tabs.
+        widget = self.tabs.widget(index)
+        
+        if widget == self.tab_home or widget == self.tab_tools:
+            return # Ignore
+            
+        if isinstance(widget, BulkRunTab):
+            # Check if running
+            if widget._is_running:
+                res = CustomMessageBox.confirm(
+                    self, "Job Running", 
+                    "This bulk job is still running.\nAre you sure you want to stop and close it?", 
+                    self._icon_dir
+                )
+                if res != "ok": return
+                widget.stop()
+            
+            self.tabs.removeTab(index)
+            widget.deleteLater()
+
+    # =========================================================================
     #  Settings Management (UNCHANGED)
     # =========================================================================
     
+    def _get_alerts_enabled(self) -> bool:
+        return bool(QSettings().value(self.ALERTS_ENABLED_KEY, True, bool))
+
+    def _set_alerts_enabled(self, on: bool):
+        QSettings().setValue(self.ALERTS_ENABLED_KEY, bool(on))
+
     def _get_unpack_filter_enabled(self) -> bool:
         return bool(QSettings().value(self.BULK_UNPACK_KEY_ENABLE, False, bool))
 
@@ -298,12 +522,18 @@ class MainWindow(QMainWindow):
             settings_menu.addAction(act_about)
             settings_btn.setMenu(settings_menu)
 
+            act_alerts = QAction("Enable System Alerts", self)
+            act_alerts.setCheckable(True)
+            act_alerts.setChecked(self._get_alerts_enabled())
+            act_alerts.toggled.connect(self._set_alerts_enabled)
+            settings_menu.addAction(act_alerts)
+
             # Bulk Menu
             bulk_btn = QToolButton(); bulk_btn.setObjectName("BulkBtn")
             bulk_btn.setText("Bulk ▾"); bulk_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
             bulk_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly); bulk_btn.setFixedHeight(36)
             bulk_menu = QMenu(bulk_btn)
-            act_run_bulk = QAction("Run Bulk", self); act_run_bulk.triggered.connect(self._start_bulk)
+            act_run_bulk = QAction("New Bulk Run", self); act_run_bulk.triggered.connect(self._start_bulk)
             act_bulk_settings = QAction("Bulk Settings", self); act_bulk_settings.triggered.connect(self._open_bulk_settings)
             bulk_menu.addAction(act_run_bulk); bulk_menu.addSeparator(); bulk_menu.addAction(act_bulk_settings)
             bulk_btn.setMenu(bulk_menu)
@@ -546,6 +776,9 @@ class MainWindow(QMainWindow):
     
     @safe_slot
     def _on_generate_clicked(self, *args):
+        # Always ensure we are on the Home tab (index 0)
+        self.tabs.setCurrentIndex(0)
+
         le = self._id_combo.lineEdit()
         text = le.text().strip().upper()
 
@@ -600,7 +833,8 @@ class MainWindow(QMainWindow):
                 life_basis=self._get_life_basis(),
                 show_all=self._get_show_all(),
                 threshold_enabled=self._get_threshold_enabled(),
-                unpacking_date=unpack_date  # Pass the date here
+                unpacking_date=unpack_date,
+                alerts_enabled=self._get_alerts_enabled()
             )
             self.editor.setPlainText(out)
             self._apply_colorized_highlighter()
@@ -611,60 +845,47 @@ class MainWindow(QMainWindow):
 
     @safe_slot
     def _start_bulk(self, *args):
-        cfg = self._get_bulk_config(); cfg.show_all = self._get_show_all()
-
-        logging.info(f"Starting Bulk Run. TopN={cfg.top_n}, Pool={cfg.pool_size}, Out={cfg.out_dir}")
-
-        self.editor.clear()
-        self._log_queue.append(f"[Info] Bulk Starting… (Top N={cfg.top_n}, Pool={cfg.pool_size})")
-
-        if self._bulk_thread and self._bulk_thread.isRunning():
-            self._log_queue.append("[Info] A run is already active."); return
+        # 1. Prepare Config & Args
+        cfg = self._get_bulk_config()
+        cfg.show_all = self._get_show_all()
         
-        # Read Settings
         s = QSettings()
-        # Max Age (Older than...)
         unpack_max_enabled = bool(s.value("bulk/unpack_filter_enabled", False, bool))
         unpack_max_months = int(s.value("bulk/unpack_extra_months", 0, int))
-        
-        # Min Age (Newer than...)
         unpack_min_enabled = bool(s.value("bulk/unpack_min_filter_enabled", False, bool))
         unpack_min_months = int(s.value("bulk/unpack_min_months", 0, int))
 
-        self._bulk_thread = QThread(self)
-        self._bulk_runner = BulkRunner(
-            cfg, 
-            threshold=self._get_threshold(), 
-            life_basis=self._get_life_basis(),
-            threshold_enabled=self._get_threshold_enabled(),
-            # Pass both filters
-            unpack_max_enabled=unpack_max_enabled,
-            unpack_max_months=unpack_max_months,
-            unpack_min_enabled=unpack_min_enabled,
-            unpack_min_months=unpack_min_months,
-        )
-        self._bulk_runner.moveToThread(self._bulk_thread)
-        self._bulk_thread.started.connect(self._bulk_runner.run)
-        self._bulk_runner.progress.connect(self.on_bulk_progress)
-        self._bulk_runner.finished.connect(self.on_bulk_finished)
-        self._bulk_runner.finished.connect(self._bulk_thread.quit)
-        self._bulk_runner.finished.connect(self._bulk_runner.deleteLater)
-        self._bulk_thread.finished.connect(self._bulk_thread.deleteLater)
-        self._bulk_thread.start()
+        runner_kwargs = {
+            "threshold": self._get_threshold(),
+            "life_basis": self._get_life_basis(),
+            "threshold_enabled": self._get_threshold_enabled(),
+            "unpack_max_enabled": unpack_max_enabled,
+            "unpack_max_months": unpack_max_months,
+            "unpack_min_enabled": unpack_min_enabled,
+            "unpack_min_months": unpack_min_months,
+        }
 
+        # 2. Create the Tab
+        tab = BulkRunTab(cfg, runner_kwargs)
+        
+        # 3. Connect Tab Signals to MainWindow Actions
+        # When tab requests inspection, fill serial in Home and generate
+        tab.inspect_requested.connect(self._on_bulk_inspect_requested)
+        
+        # 4. Add to TabWidget and Select it
+        title = f"Bulk {datetime.now().strftime('%H:%M')}"
+        idx = self.tabs.addTab(tab, title)
+        self.tabs.setCurrentIndex(idx)
+        
+        # 5. Start the Job
+        tab.start()
+        
     @pyqtSlot(str)
-    def on_bulk_progress(self, line: str): self._log_queue.append(line)
-
-    @pyqtSlot(str)
-    def on_bulk_finished(self, msg: str):
-        self._log_queue.append(msg); self._log_queue.append("[Info] (done)")
-        self._bulk_runner = None; self._bulk_thread = None
-
-    def _flush_log_queue(self):
-        if not self._log_queue: return
-        chunk = [self._log_queue.popleft() for _ in range(min(self._log_batch_limit, len(self._log_queue)))]
-        self.editor.appendPlainText("\n".join(chunk))
-        self.editor.moveCursor(QTextCursor.MoveOperation.End)
+    def _on_bulk_inspect_requested(self, serial):
+        """Called when a Bulk Tab 'Inspect' context menu is clicked."""
+        self.tabs.setCurrentIndex(0) # Go to Home
+        self._id_combo.setEditText(serial)
+        self._on_generate_clicked()
 
     def _clear_output_window(self): self.editor.clear()
 
@@ -790,12 +1011,6 @@ class MainWindow(QMainWindow):
         cb_min_age.setChecked(bool(s.value("bulk/unpack_min_filter_enabled", False, bool)))
         sp_min_age = QSpinBox(dlg); sp_min_age.setObjectName("DialogInput"); sp_min_age.setRange(0, 120)
         sp_min_age.setValue(int(s.value("bulk/unpack_min_months", 0, int)))
-
-        # Logic to disable spinboxes if checkbox is off
-        # cb_max_age.toggled.connect(sp_max_age.setEnabled)
-        # cb_min_age.toggled.connect(sp_min_age.setEnabled)
-        # sp_max_age.setEnabled(cb_max_age.isChecked())
-        # sp_min_age.setEnabled(cb_min_age.isChecked())
 
         btn_save = QPushButton("Save", dlg)
         def _save():

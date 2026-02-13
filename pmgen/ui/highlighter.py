@@ -1,12 +1,52 @@
 import re
 from PyQt6.QtGui import QSyntaxHighlighter, QTextCharFormat, QColor, QFont
+from PyQt6.QtCore import Qt
 
 class OutputHighlighter(QSyntaxHighlighter):
     def __init__(self, parent_doc):
         super().__init__(parent_doc)
+        
+        # 1. Build Text Formats
         self._build_formats()
+        
+        # 2. Compile Regex Patterns (Performance Optimization)
+        # Bulk patterns
+        self.re_bulk_pct = re.compile(r"(?P<num>\d+(?:\.\d+)?)%")
+        self.re_bulk_ok = re.compile(r"\bOK\b", re.IGNORECASE)
+        self.re_bulk_filtered = re.compile(r"\bFILTERED\b", re.IGNORECASE)
+        self.re_bulk_serial = re.compile(r"\b[A-Z0-9]{5,10}\b")
+        
+        # Kit patterns
+        self.re_kit_new_after = re.compile(r"^\s*(?P<qty>\d+)\s*[x×]\s*→\s*(?P<pn>\S+)\s*→\s*(?P<kit>\S.*?)\s*$", re.IGNORECASE)
+        self.re_kit_new_before = re.compile(r"^\s*x\s*(?P<qty>\d+)\s*→\s*(?P<pn>\S+)\s*→\s*(?P<kit>\S.*?)\s*$", re.IGNORECASE)
+        self.re_kit_old = re.compile(r"^\s*(?P<kit>\S.*?)\s*→\s*(?P<pn>\S+)\s*[×x]\s*(?P<qty>\d+)\s*$", re.IGNORECASE)
+        
+        # Due item pattern
+        self.re_due_item = re.compile(r"^\s*•\s+(?P<canon>.+?)\s+—\s+(?P<pct>\S+)(?:\s*→\s*(?P<due>DUE))?\s*$")
+        
+        # Model info pattern
+        self.re_model_info = re.compile(
+            r"Model:\s*(?P<model>.*?)(?=\s+\|)\s*\|\s*"
+            r"Serial:\s*(?P<serial>\S+)\s*\|\s*"
+            r"Last Reported:\s*(?P<report_date>.*?)(?=\s+\|)\s*\|\s*"
+            r"Unpacking Date:\s*(?P<unpacking_date>.+)$"
+        )
+        
+        # Threshold pattern
+        self.re_threshold = re.compile(
+            r"(?i)"
+            r"(?P<label>due\s*threshold:)\s*"   # 'Due threshold:'
+            r"(?P<thresh>[0-9.]+%?)\s*"         # '94.0%'
+            r"(?P<sep>•)\s*"                    # '•'
+            r"(?P<basis_lab>basis:)\s*"         # 'Basis:'
+            r"(?P<basis>\S+)"                   # 'PAGE'
+        )
+        
+        # Counter pattern (key: value)
+        self.re_kv_pair = re.compile(r"([A-Za-z]+):\s*([0-9,]+)")
 
     def _mkfmt(self, fg=None, bold=False, italic=False):
+        """Helper to create a QTextCharFormat."""
         fmt = QTextCharFormat()
         if fg is not None:
             fmt.setForeground(QColor(fg))
@@ -17,76 +57,137 @@ class OutputHighlighter(QSyntaxHighlighter):
         return fmt
 
     def _build_formats(self):
-        self.fmt_normal     = self._mkfmt("#ffffff", bold=True)
-        self.fmt_header     = self._mkfmt("#7aa2f7", bold=True)
-        self.fmt_rule       = self._mkfmt("#444444")
-        self.fmt_muted      = self._mkfmt("#888888", italic=True)
-        self.fmt_kit_row    = self._mkfmt("#a6da95")
-        self.fmt_due_bullet = self._mkfmt("#f7768e", bold=True)
-        self.fmt_percentage = self._mkfmt("#f77600", bold=True)
-        self.fmt_label      = self._mkfmt("#c0caf5", bold=True)
+        """Initialize all text styles."""
+        # General Styles
+        self.fmt_normal = self._mkfmt("#ffffff", bold=True)
+        self.fmt_muted  = self._mkfmt("#888888", italic=True)
+        self.fmt_header = self._mkfmt("#7aa2f7", bold=True)
+        self.fmt_rule   = self._mkfmt("#444444")
+        self.fmt_info   = self._mkfmt("#D8B30C", bold=True)
+        self.fmt_label  = self._mkfmt("#c0caf5", bold=True)
 
+        # Bulk Report Styles
+        self.fmt_bulk          = self._mkfmt("#a680eb", bold=True)
+        self.fmt_bulk_serial   = self._mkfmt("#FFFF55", bold=True)
+        self.fmt_bulk_ok       = self._mkfmt("#00ff3c", bold=True)
+        self.fmt_bulk_filtered = self._mkfmt("#d83d37", bold=True)
+        self.fmt_pct_low       = self._mkfmt("#40ed68", bold=True)
+        self.fmt_pct_mid       = self._mkfmt("#f79346", bold=True)
+        self.fmt_pct_high      = self._mkfmt("#d83d37", bold=True)
+
+        # Kit / Part Styles
+        self.fmt_kit_row = self._mkfmt("#a6da95")
+        
+        # Due Items Styles
+        self.fmt_due_bullet   = self._mkfmt("#f7768e", bold=True)
         self.fmt_due_row_base = self._mkfmt("#bbbbbb")
         self.fmt_due_canon    = self._mkfmt("#1c94d5", bold=True)
         self.fmt_due_pct      = self._mkfmt("#e0af68", bold=True)
         self.fmt_due_flag     = self._mkfmt("#f7768e", bold=True)
 
-        self.fmt_header_line_base = self._mkfmt("#bfbfbf")
-        self.fmt_model_value      = self._mkfmt("#a6da95", bold=True)
-        self.fmt_serial_value     = self._mkfmt("#7dcfff", bold=True)
-        self.fmt_date_value       = self._mkfmt("#e0af68")
+        # Model Info Styles
+        self.fmt_model_value  = self._mkfmt("#a6da95", bold=True)
+        self.fmt_serial_value = self._mkfmt("#7dcfff", bold=True)
+        self.fmt_r_date_value = self._mkfmt("#e0af68")
+        self.fmt_u_date_value = self._mkfmt("#f77564")
 
-        self.fmt_badge_line_base  = self._mkfmt("#bfbfbf")
-        self.fmt_thresh_value     = self._mkfmt("#e0af68", bold=True)
-        self.fmt_basis_badge      = self._mkfmt("#e0af68", bold=True)
+        # Threshold / Badge Styles
+        self.fmt_badge_line_base = self._mkfmt("#bfbfbf")
+        self.fmt_thresh_value    = self._mkfmt("#fb7127", bold=True)
+        self.fmt_basis_badge     = self._mkfmt("#fb7127", bold=True)
 
-        self.fmt_counters_base    = self._mkfmt("#bfbfbf")
-        self.fmt_kv_label         = self._mkfmt("#1c94d5", bold=True)
-        self.fmt_kv_value         = self._mkfmt("#e0af68", bold=True)
-        
-        self.fmt_bulk             = self._mkfmt("#97eb80ff", bold=True)
-        self.fmt_info             = self._mkfmt("#D8B30C", bold=True)
-
-        self.fmt_pct_low          = self._mkfmt("#40ed68", bold=True)
-        self.fmt_pct_mid          = self._mkfmt("#f79346", bold=True)
-        self.fmt_pct_high         = self._mkfmt("#d83d37", bold=True)
-
-        self.fmt_bulk_serial      = self._mkfmt("#81A1C1", bold=True)
-        self.fmt_bulk_ok          = self._mkfmt("#40ed68", bold=True)
-        self.fmt_bulk_filtered    = self._mkfmt("#d83d37", bold=True)
+        # Counters Styles
+        self.fmt_counters_base = self._mkfmt("#bfbfbf")
+        self.fmt_kv_label      = self._mkfmt("#1c94d5", bold=True)
+        self.fmt_kv_value      = self._mkfmt("#e0af68", bold=True)
 
     def highlightBlock(self, text: str):
-        # --- CHANGE: Apply the default White/Bold to the whole line first ---
-        # Any specific matches below will overwrite this, but "gaps" will remain White/Bold.
+        """Main entry point for syntax highlighting."""
+        # 1. Apply base normal format to the whole line
         self.setFormat(0, len(text), self.fmt_normal)
 
         t = text.strip()
+        if not t:
+            return
 
-        # --- CHANGE 1: Only highlight the [Auto-Login] tag ---
+        # --- Priority Tags ---
         if "[Auto-Login]" in t:
-            # This overwrites the bold white with the muted style
             self.setFormat(0, len(text), self.fmt_muted)
             return
         
         if "[Info]" in t:
-            self.setFormat(0, len(text), self.fmt_info) 
-            
-        # --- CHANGE 3: Only highlight the [Bulk] tag ---
-        tag_bulk = "[Bulk]"
-        if tag_bulk in t:
-            # 1. Color just the [Bulk] tag
-            start_index = text.find(tag_bulk)
-            if start_index >= 0:
-                self.setFormat(start_index, len(tag_bulk), self.fmt_bulk)
+            self.setFormat(0, len(text), self.fmt_info)
+            # We don't return here as [Info] might have other content, 
+            # though usually it's standalone. If standalone, add 'return'.
 
-            # 2. Handle the specific regex coloring inside the line (Percentages)
-            pct_re = re.compile(r"(?P<num>\d+(?:\.\d+)?)%")
-            for m in pct_re.finditer(t):
-                val_str = m.group("num")
-                try:
-                    val = float(val_str)
-                except ValueError:
-                    continue
+        # --- Bulk Handling (Complex Logic) ---
+        if "[Bulk]" in t:
+            self._highlight_bulk_line(text, t)
+            return
+
+        # --- Standard Headers & Rules ---
+        if t in ("Final Parts", "Most-Due Items", "Counters", "End of Report"):
+            self.setFormat(0, len(text), self.fmt_header)
+            return
+
+        # Check for horizontal rules (e.g. "----", "====")
+        # Checks if all unique characters in the string are part of the rule set
+        unique_chars = set(t)
+        if unique_chars == {"─"} or unique_chars == {"-"} or unique_chars == {"="}:
+            self.setFormat(0, len(text), self.fmt_rule)
+            return
+
+        # --- Muted / specific prefixes ---
+        t_lower = t.lower()
+        if t.startswith("(") and any(tok in t_lower for tok in ("qty", "catalog", "part number", "×", " x ")):
+            self.setFormat(0, len(text), self.fmt_muted)
+            return
+
+        # --- Kit / Part Rows ---
+        if "→" in t and not t.startswith("Report Date"):
+            if (self.re_kit_new_after.match(t) or 
+                self.re_kit_new_before.match(t) or 
+                self.re_kit_old.match(t)):
+                self.setFormat(0, len(text), self.fmt_kit_row)
+                return
+
+        # --- Due Items / Bullets ---
+        if t.startswith("• ") or "→ DUE" in t:
+            self._highlight_due_item(text, t)
+            return
+
+        # --- Model Info Block ---
+        if t.startswith("Model:") and "Serial:" in t:
+            self._highlight_model_info(text)
+            return
+
+        # --- Labels ---
+        if t.startswith("Basis:") or t.startswith("Report Date:"):
+            self.setFormat(0, len(text), self.fmt_label)
+            return
+
+        # --- Thresholds ---
+        if t_lower.startswith("due threshold:") and "basis:" in t_lower:
+            self._highlight_threshold(text)
+            return
+
+        # --- Counters ---
+        if t_lower.startswith("color:") or (" black:" in t_lower and " total:" in t_lower):
+            self._highlight_counters(text)
+            return
+
+    def _highlight_bulk_line(self, text, stripped):
+        """Handles specific formatting for lines containing [Bulk]."""
+        # 1. Color the [Bulk] tag itself
+        tag_bulk = "[Bulk]"
+        start_index = text.find(tag_bulk)
+        if start_index >= 0:
+            self.setFormat(start_index, len(tag_bulk), self.fmt_bulk)
+
+        # 2. Color Percentages based on value
+        for m in self.re_bulk_pct.finditer(stripped):
+            try:
+                val = float(m.group("num"))
                 if val < 84.0:
                     fmt = self.fmt_pct_low
                 elif val < 100.0:
@@ -94,90 +195,63 @@ class OutputHighlighter(QSyntaxHighlighter):
                 else:
                     fmt = self.fmt_pct_high
                 self.setFormat(m.start(), m.end() - m.start(), fmt)
+            except ValueError:
+                continue
 
-            # 3. Handle OK
-            ok_re = re.compile(r"\bOK\b", re.IGNORECASE)
-            for m in ok_re.finditer(t):
-                self.setFormat(m.start(), m.end() - m.start(), self.fmt_bulk_ok)
+        # 3. Status Keywords
+        for m in self.re_bulk_ok.finditer(stripped):
+            self.setFormat(m.start(), m.end() - m.start(), self.fmt_bulk_ok)
 
-            # 4. Handle FILTERED
-            filtered_re = re.compile(r"\bFILTERED\b", re.IGNORECASE)
-            for m in filtered_re.finditer(t):
-                self.setFormat(m.start(), m.end() - m.start(), self.fmt_bulk_filtered)
+        for m in self.re_bulk_filtered.finditer(stripped):
+            self.setFormat(m.start(), m.end() - m.start(), self.fmt_bulk_filtered)
 
-            # 5. Handle Serial Numbers
-            serial_re = re.compile(r"\b[A-Z0-9]{5,10}\b")
-            for m in serial_re.finditer(t):
-                self.setFormat(m.start(), m.end() - m.start(), self.fmt_bulk_serial)
-            return
+        # 4. Serial Numbers
+        for m in self.re_bulk_serial.finditer(stripped):
+            self.setFormat(m.start(), m.end() - m.start(), self.fmt_bulk_serial)
 
-        # --- The rest of the logic remains unchanged ---
+    def _highlight_due_item(self, text, stripped):
+        """Handles lines with bullets or DUE flags."""
+        m = self.re_due_item.match(stripped)
+        if m:
+            # Overwrite the base white with the grey base
+            self.setFormat(0, len(text), self.fmt_due_row_base)
+            
+            # Calculate whitespace offset because regex matched on stripped text
+            left_ws = len(text) - len(text.lstrip())
 
-        if t in ("Final Parts", "Most-Due Items", "Counters", "End of Report"):
-            self.setFormat(0, len(text), self.fmt_header)
-            return
+            def _apply(name, fmt):
+                if m.group(name):
+                    s, e = m.start(name), m.end(name)
+                    self.setFormat(left_ws + s, e - s, fmt)
 
-        if set(t) in ({"─"}, {"-"}, {"="}):
-            self.setFormat(0, len(text), self.fmt_rule)
-            return
+            _apply("canon", self.fmt_due_canon)
+            _apply("pct",   self.fmt_due_pct)
+            if m.group("due"):
+                _apply("due", self.fmt_due_flag)
+        else:
+            self.setFormat(0, len(text), self.fmt_due_bullet)
 
-        if t.startswith("(") and any(tok in t.lower() for tok in ("qty", "catalog", "part number", "×", " x ")):
-            self.setFormat(0, len(text), self.fmt_muted)
-            return
+    def _highlight_model_info(self, text):
+        """Handles the Model | Serial | Date line."""
+        m = self.re_model_info.search(text)
+        if m:
+            self.setFormat(m.start("model"), m.end("model") - m.start("model"), self.fmt_model_value)
+            self.setFormat(m.start("serial"), m.end("serial") - m.start("serial"), self.fmt_serial_value)
+            self.setFormat(m.start("report_date"), m.end("report_date") - m.start("report_date"), self.fmt_r_date_value)
+            self.setFormat(m.start("unpacking_date"), m.end("unpacking_date") - m.start("unpacking_date"), self.fmt_u_date_value)
 
-        if "→" in t and not t.startswith("Report Date"):
-            kit_new_after = re.compile(r"^\s*(?P<qty>\d+)\s*[x×]\s*→\s*(?P<pn>\S+)\s*→\s*(?P<kit>\S.*?)\s*$", re.IGNORECASE)
-            kit_new_before = re.compile(r"^\s*x\s*(?P<qty>\d+)\s*→\s*(?P<pn>\S+)\s*→\s*(?P<kit>\S.*?)\s*$", re.IGNORECASE)
-            kit_old = re.compile(r"^\s*(?P<kit>\S.*?)\s*→\s*(?P<pn>\S+)\s*[×x]\s*(?P<qty>\d+)\s*$", re.IGNORECASE)
+    def _highlight_threshold(self, text):
+        """Handles the Due Threshold line with granular coloring."""
+        m = self.re_threshold.search(text)
+        if m:
+            self.setFormat(*m.span("thresh"), self.fmt_thresh_value)
+            self.setFormat(*m.span("sep"), self.fmt_normal)
+            self.setFormat(*m.span("basis_lab"), self.fmt_normal)
+            self.setFormat(*m.span("basis"), self.fmt_basis_badge)
 
-            if kit_new_after.match(t) or kit_new_before.match(t) or kit_old.match(t):
-                self.setFormat(0, len(text), self.fmt_kit_row)
-                return
-
-        if t.startswith("• ") or "→ DUE" in t:
-            m = re.match(r"^\s*•\s+(?P<canon>.+?)\s+—\s+(?P<pct>\S+)(?:\s*→\s*(?P<due>DUE))?\s*$", t)
-            if m:
-                # IMPORTANT: Overwrite the base white with the grey base for this row type
-                self.setFormat(0, len(text), self.fmt_due_row_base) 
-                
-                left_ws = len(text) - len(text.lstrip())
-                def _apply(name, fmt):
-                    if name in m.groupdict() and m.group(name):
-                        s, e = m.start(name), m.end(name)
-                        self.setFormat(left_ws + s, e - s, fmt)
-                _apply("canon", self.fmt_due_canon)
-                _apply("pct",   self.fmt_due_pct)
-                if m.group("due"):
-                    _apply("due", self.fmt_due_flag)
-                return
-            else:
-                self.setFormat(0, len(text), self.fmt_due_bullet)
-                return
-
-        if t.startswith("Model:") and "Serial:" in t and "Date:" in t:
-            self.setFormat(0, len(text), self.fmt_header_line_base)
-            m = re.search(r"Model:\s*(?P<model>.+?)\s*\|\s*Serial:\s*(?P<serial>\S+)\s*\|\s*Date:\s*(?P<date>.+)$", text)
-            if m:
-                self.setFormat(*m.span("model"), self.fmt_model_value)
-                self.setFormat(*m.span("serial"), self.fmt_serial_value)
-                self.setFormat(*m.span("date"), self.fmt_date_value)
-            return
-
-        if t.startswith("Basis:") or t.startswith("Report Date:"):
-            self.setFormat(0, len(text), self.fmt_label)
-            return
-
-        if t.lower().startswith("due threshold:") and "basis:" in t.lower():
-            self.setFormat(0, len(text), self.fmt_badge_line_base)
-            m = re.search(r"(?i)due\s*threshold:\s*(?P<thresh>[0-9.]+%?)\s*•\s*basis:\s*(?P<basis>\S+)", text)
-            if m:
-                self.setFormat(*m.span("thresh"), self.fmt_thresh_value)
-                self.setFormat(*m.span("basis"),  self.fmt_basis_badge)
-            return
-
-        if t.lower().startswith("color:") or (" black:" in t.lower() and " total:" in t.lower()):
-            self.setFormat(0, len(text), self.fmt_counters_base)
-            for m in re.finditer(r"([A-Za-z]+):\s*([0-9,]+)", text):
-                self.setFormat(*m.span(1), self.fmt_kv_label)
-                self.setFormat(*m.span(2), self.fmt_kv_value)
-            return
+    def _highlight_counters(self, text):
+        """Handles Key:Value lines (Colors, counts)."""
+        self.setFormat(0, len(text), self.fmt_counters_base)
+        for m in self.re_kv_pair.finditer(text):
+            self.setFormat(*m.span(1), self.fmt_kv_label)
+            self.setFormat(*m.span(2), self.fmt_kv_value)
