@@ -9,11 +9,12 @@ import datetime
 import logging
 from packaging import version
 from PyQt6.QtCore import QObject, pyqtSignal
+from pmgen.io.http_client import get_db_path
 
 # --- CONFIGURATION ---
 GITHUB_REPO = "c0pper22/PmGen"
 ASSET_NAME = "PmGen.zip" 
-CURRENT_VERSION = "2.8.0"
+CURRENT_VERSION = "2.8.1"
 HEADERS = {'User-Agent': f"PmGen-Updater/{CURRENT_VERSION}"}
 
 class UpdateWorker(QObject):

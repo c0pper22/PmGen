@@ -14,6 +14,18 @@ os.environ.setdefault("QT_AUTO_SCREEN_SCALE_FACTOR", "1")
 
 def bootstrap_database():
     target_path = get_db_path()
+
+    # =========================================================================
+    # [TEMPORARY] FORCE FRESH DATABASE ON STARTUP
+    # TODO: Remove the following block when you want user data to persist across sessions!
+    if os.path.exists(target_path):
+        try:
+            os.remove(target_path)
+            logging.info(f"Deleted old database at {target_path} to force a fresh copy.")
+        except OSError as e:
+            logging.error(f"Failed to delete old database: {e}")
+    # =========================================================================
+
     if os.path.exists(target_path):
         return
 
@@ -32,6 +44,8 @@ def bootstrap_database():
             logging.info(f"Successfully bootstrapped database to {target_path}") 
         except Exception as e:
             logging.error(f"Error copying database: {e}") 
+    else:
+        # Only log critical if we really needed to copy it but couldn't find the source
         logging.critical(f"Master database not found at {os.path.abspath(source_path)}")
 
 def main() -> int:
@@ -59,8 +73,6 @@ def main() -> int:
         return exit_code
 
     except Exception:
-        # This catch-all handles errors during app startup (e.g., ImportError, init failure)
-        # The install_crash_handlers should catch most, but this is a final safety net.
         logging.exception("Critical failure during application startup.")
         raise
 
