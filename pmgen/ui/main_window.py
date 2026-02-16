@@ -175,9 +175,9 @@ class BulkRunTab(QWidget):
         act_inspect.triggered.connect(lambda: self.inspect_requested.emit(serial))
         menu.addAction(act_inspect)
         
-        act_open = QAction("Open Output Folder", self.view)
-        act_open.triggered.connect(self._open_folder)
-        menu.addAction(act_open)
+        # act_open = QAction("Open Output Folder", self.view)
+        # act_open.triggered.connect(self._open_folder)
+        # menu.addAction(act_open)
 
         menu.exec(self.view.viewport().mapToGlobal(pos))
 

@@ -55,6 +55,33 @@ def _seperatorLine(lines) -> None:
     """
     lines.append("─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────")
 
+def _calc_unpack_alert(unpacking_date: Optional[Union[str, date]]) -> Optional[str]:
+    """Helper to check if unpacking date is older than n months."""
+
+    older_than_filter = 48
+
+    if not unpacking_date:
+        return None
+    
+    try:
+        if isinstance(unpacking_date, str):
+            u_date = datetime.strptime(unpacking_date, "%Y-%m-%d").date()
+        elif isinstance(unpacking_date, datetime):
+            u_date = unpacking_date.date()
+        else:
+            u_date = unpacking_date
+
+        today = date.today()
+        age_months = (today.year - u_date.year) * 12 + (today.month - u_date.month)
+        
+        if age_months > older_than_filter:
+            return f"Unpacking Date Alert: Unit is {age_months}. Talk to FSM."
+            
+    except Exception:
+        pass
+        
+    return None
+
 def format_report(
     *,
     report,
@@ -123,7 +150,16 @@ def format_report(
     final_lines: List[str] = []
 
     meta = getattr(selection, "meta", {}) or {}
-    alerts = meta.get("alerts", [])
+    
+    # --- ALERTS PREP ---
+    # Copy alerts so we don't mutate the original selection object permanently
+    alerts = list(meta.get("alerts", []) or [])
+    
+    # 1. Add Unpacking Date Alert
+    unpack_alert = _calc_unpack_alert(unpacking_date)
+    if unpack_alert:
+        alerts.append(unpack_alert)
+
     grouped = meta.get("selection_pn_grouped", {}) or {}
     flat    = meta.get("selection_pn", {}) or {}
     by_pn   = meta.get("kit_by_pn", {}) or {}
@@ -312,7 +348,13 @@ def create_pdf_report(
 
     # Final parts
     meta = getattr(selection, "meta", {}) or {}
-    alerts = meta.get("alerts", [])
+    alerts = list(meta.get("alerts", []) or [])
+    
+    # Check Unpacking Alert for PDF as well
+    unpack_alert = _calc_unpack_alert(unpacking_date)
+    if unpack_alert:
+        alerts.append(unpack_alert)
+
     grouped = meta.get("selection_pn_grouped", {}) or {}
     flat    = meta.get("selection_pn", {}) or {}
     by_pn   = meta.get("kit_by_pn", {}) or {}

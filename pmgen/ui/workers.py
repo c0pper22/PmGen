@@ -162,9 +162,6 @@ class BulkRunner(QObject):
             self.progress.emit(f"[Info] Initializing {pool_size} sessions...")
 
             try:
-                for i in range(pool_size):
-                    self.progress.emit(f"Creating sessionpool ({i+1}/{pool_size})")
-                    
                 pool = SessionPool(pool_size, callback=self._update_pool_progress)
 
             except Exception as e:

@@ -65,6 +65,7 @@ class OutputHighlighter(QSyntaxHighlighter):
         self.fmt_rule   = self._mkfmt("#444444")
         self.fmt_info   = self._mkfmt("#D8B30C", bold=True)
         self.fmt_label  = self._mkfmt("#c0caf5", bold=True)
+        self.fmt_alert         = self._mkfmt("#ff0000", bold=True)
 
         # Bulk Report Styles
         self.fmt_bulk          = self._mkfmt("#a680eb", bold=True)
@@ -123,6 +124,11 @@ class OutputHighlighter(QSyntaxHighlighter):
         # --- Bulk Handling (Complex Logic) ---
         if "[Bulk]" in t:
             self._highlight_bulk_line(text, t)
+            return
+
+        # --- Unpack Alert ---
+        if "[!] Unpacking Date Alert:" in t:
+            self.setFormat(0, len(text), self.fmt_alert)
             return
 
         # --- Standard Headers & Rules ---
