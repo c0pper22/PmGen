@@ -4,7 +4,8 @@ import traceback
 from fnmatch import fnmatchcase
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, date
+import calendar
 from PyQt6.QtCore import QObject, pyqtSignal, QThread
 from typing import Dict
 
@@ -54,91 +55,41 @@ class BulkRunner(QObject):
             if fnmatchcase(s, pat): return True
         return False
 
-    def _prefilter_by_unpack_date(self, serials: list[str], pool):
-        if not self._unpack_max_enabled and not self._unpack_min_enabled:
-            self.progress.emit("[Info] Unpack date filters disabled.")
-            return list(serials)
-
-        try:
-            from pmgen.io.http_client import get_device_info_08
-            _use_combined = True
-        except ImportError:
-            from pmgen.io.http_client import get_unpacking_date as _get_unpack
-            _use_combined = False
-
-        from datetime import date
-        import calendar
-
-        def _add_months(d: date, months: int) -> date:
-            y = d.year + (d.month - 1 + months) // 12
-            m = (d.month - 1 + months) % 12 + 1
-            return date(y, m, min(d.day, calendar.monthrange(y, m)[1]))
-
-        kept = []
-
-        self.progress.emit("[Bulk] Fetching dates for pre-filtering...")
-
-        with pool.acquire() as sess:
-            total = len(serials)
-            count = 0
-            today = date.today()
-
-            for s in serials:
-                if QThread.currentThread().isInterruptionRequested():
-                    self.progress.emit("[Info] Date check stopped by user.")
-                    return kept
-
-                count += 1
-                self.progress_value.emit(count, total)
-
-                if count % 5 == 0:
-                    self.progress.emit(f"[Bulk] Checking dates... ({count}/{total})")
-
-                d = None
-                model = "Unknown"
-
-                try:
-                    if _use_combined:
-                        info = get_device_info_08(s, sess=sess)
-                        d = info.get("date")
-                        model = info.get("model", "Unknown")
-                    else:
-                        d = _get_unpack(s, sess=sess)
-                except Exception:
-                    kept.append(s)
-                    continue
-
-                if model and model != "Unknown":
-                     self.item_updated.emit(s, "Queued", "", model, "")
-
-                if not d:
-                    kept.append(s)
-                    continue
-
-                d_str = d.strftime("%Y-%m-%d")
-
-                # Max Age Check
-                if self._unpack_max_enabled:
-                    cutoff_max = _add_months(d, self._unpack_max_months)
-                    if today > cutoff_max:
-                        self.item_updated.emit(s, "Filtered", "Too Old", model, d_str)
-                        continue
-
-                # Min Age Check
-                if self._unpack_min_enabled:
-                    cutoff_min = _add_months(d, self._unpack_min_months)
-                    if today < cutoff_min:
-                        self.item_updated.emit(s, "Filtered", "Too New", model, d_str)
-                        continue
-
-                kept.append(s)
-
-        return kept
-
     def _fmt_pct(self, p):
         if p is None: return "—"
         try: return f"{(float(p) * 100):.1f}%"
         except Exception: return "—"
+
+    def _check_date_filter(self, d: date) -> str | None:
+        """
+        Returns a reason string if filtered (e.g., 'Too Old'), or None if allowed.
+        """
+        if not d:
+            # If no date is available, we cannot filter by date, so we keep it.
+            return None
+        
+        today = date.today()
+
+        def _add_months(source_date: date, months: int) -> date:
+            y = source_date.year + (source_date.month - 1 + months) // 12
+            m = (source_date.month - 1 + months) % 12 + 1
+            return date(y, m, min(source_date.day, calendar.monthrange(y, m)[1]))
+
+        # 1. Max Age Check (Exclude if OLDER than X months)
+        if self._unpack_max_enabled:
+            cutoff_max = _add_months(d, self._unpack_max_months)
+            # If today is AFTER the cutoff, the device is too old
+            if today > cutoff_max:
+                return "Too Old"
+
+        # 2. Min Age Check (Exclude if NEWER than X months)
+        if self._unpack_min_enabled:
+            cutoff_min = _add_months(d, self._unpack_min_months)
+            # If today is BEFORE the cutoff, the device is too new
+            if today < cutoff_min:
+                return "Too New"
+
+        return None
 
     def run(self):
         pool = None
@@ -146,6 +97,7 @@ class BulkRunner(QObject):
             if not self.cfg.out_dir or not self.cfg.out_dir.strip():
                 raise ValueError("Output directory is not set.")
 
+            # Create Output Directory
             date_str = datetime.now().strftime("%Y-%m-%d")
             base_path = os.path.join(self.cfg.out_dir, date_str)
             final_out_dir = base_path
@@ -161,34 +113,34 @@ class BulkRunner(QObject):
             from pmgen.engine.single_report import create_pdf_report
             from pmgen.engine.final_report import write_final_summary_pdf
 
+            # 1. Initialize Pool
             pool_size = self.cfg.pool_size
             self.progress.emit(f"[Info] Initializing {pool_size} sessions...")
 
             try:
                 pool = SessionPool(pool_size, callback=self._update_pool_progress)
-
             except Exception as e:
                 self.progress.emit(f"[Info] Failed to create pool: {e}")
                 return
 
+            # 2. Get Serials
             with pool.acquire() as sess:
                 serials = get_serials_after_login(sess)
 
             self.progress.emit(f"[Info] Found {len(serials)} Active Serials.")
 
+            # 3. Filter Blacklist Only (Date filtering happens during processing now)
             serials0 = list(serials or [])
-            serials1 = [s for s in serials0 if not self._is_blacklisted(s)]
+            serials_to_process = [s for s in serials0 if not self._is_blacklisted(s)]
 
-            for s in serials1:
+            for s in serials_to_process:
                 self.item_updated.emit(s, "Queued", "", "Unknown", "")
 
-            kept_serials = self._prefilter_by_unpack_date(serials1, pool)
-            
             if QThread.currentThread().isInterruptionRequested():
                 self.finished.emit("[Info] Stopped.")
                 return
 
-            self.progress.emit(f"[Info] Processing {len(kept_serials)} Serials...")
+            self.progress.emit(f"[Info] Processing {len(serials_to_process)} Serials...")
 
             thr = self.threshold
             basis = self.life_basis
@@ -201,16 +153,19 @@ class BulkRunner(QObject):
                 if isinstance(item, dict): return item.get(key, default)
                 return default
 
+            # --- WORKER FUNCTION ---
             def work(serial: str):
                 self.item_updated.emit(serial, "Processing", "...", "", "")
                 
                 cust_name = self.customer_map.get(serial, "")
 
                 try:
+                    # A. Fetch Data
                     with pool.acquire() as sess:
                         blob = get_service_file_bytes(serial, "PMSupport", sess=sess)
                         unpack_date = get_unpacking_date(serial, sess=sess)
 
+                    # B. Parse & Calculate
                     report = parse_pm_report(blob)
                     model_name = (report.headers or {}).get("model") or "Unknown"
 
@@ -219,42 +174,61 @@ class BulkRunner(QObject):
                     meta = getattr(selection, "meta", {}) or {}
                     all_items = meta.get("all_items", []) or meta.get("all", []) or getattr(selection, "all_items", []) or []
                     best_used = max([float(get_val(f, "life_used", 0.0) or 0.0) for f in all_items], default=0.0)
-
-                    create_pdf_report(
-                        report=report, selection=selection, threshold=thr, life_basis=basis,
-                        show_all=show_all, out_dir=final_out_dir, threshold_enabled=thr_enabled,
-                        unpacking_date=unpack_date,
-                        customer_name=cust_name
-                    )
-
+                    
                     pct_str = self._fmt_pct(best_used)
                     d_str = unpack_date.strftime("%Y-%m-%d") if unpack_date else ""
 
-                    self.item_updated.emit(serial, "Done", pct_str, model_name, d_str)
+                    # C. Check Date Filter
+                    filter_reason = self._check_date_filter(unpack_date)
 
-                    return {
-                        "serial": (report.headers or {}).get("serial") or serial,
-                        "model": model_name,
-                        "best_used": float(best_used),
-                        "text": "None",
-                        "customer_name": cust_name, 
-                        "grouped": meta.get("selection_pn_grouped", {}) or {},
-                        "flat": meta.get("selection_pn", {}) or {},
-                        "kit_by_pn": meta.get("kit_by_pn", {}) or {},
-                        "due_sources": meta.get("due_sources", {}) or {},
-                        "unpacking_date": unpack_date
-                    }
+                    if filter_reason:
+                        # FILTERED: Update UI with percentage, but mark as filtered.
+                        # We do NOT generate the individual PDF report.
+                        self.item_updated.emit(serial, "Filtered", pct_str, model_name, d_str)
+                        
+                        return {
+                            "serial": serial,
+                            "filtered": True,
+                            "reason": filter_reason,
+                            "best_used": float(best_used) # Return value so we can sort if needed
+                        }
+                    else:
+                        # DONE: Generate PDF and mark as Done.
+                        create_pdf_report(
+                            report=report, selection=selection, threshold=thr, life_basis=basis,
+                            show_all=show_all, out_dir=final_out_dir, threshold_enabled=thr_enabled,
+                            unpacking_date=unpack_date,
+                            customer_name=cust_name
+                        )
+
+                        self.item_updated.emit(serial, "Done", pct_str, model_name, d_str)
+
+                        return {
+                            "serial": (report.headers or {}).get("serial") or serial,
+                            "model": model_name,
+                            "best_used": float(best_used),
+                            "text": "None",
+                            "customer_name": cust_name, 
+                            "grouped": meta.get("selection_pn_grouped", {}) or {},
+                            "flat": meta.get("selection_pn", {}) or {},
+                            "kit_by_pn": meta.get("kit_by_pn", {}) or {},
+                            "due_sources": meta.get("due_sources", {}) or {},
+                            "unpacking_date": unpack_date,
+                            "filtered": False
+                        }
+
                 except Exception as e:
                     self.item_updated.emit(serial, "Failed", str(e), "", "")
                     return {"serial": serial, "error": str(e), "trace": traceback.format_exc()}
 
+            # --- EXECUTION LOOP ---
             results = []
             completed_count = 0
-            total_work = len(kept_serials)
+            total_work = len(serials_to_process)
 
             if total_work > 0:
                 with ThreadPoolExecutor(max_workers=self.cfg.pool_size) as ex:
-                    futures = {ex.submit(work, s): s for s in kept_serials}
+                    futures = {ex.submit(work, s): s for s in serials_to_process}
                     
                     for fut in as_completed(futures):
                         if QThread.currentThread().isInterruptionRequested():
@@ -271,19 +245,24 @@ class BulkRunner(QObject):
                             res = fut.result()
                             if "error" in res:
                                 self.progress.emit(f"[Bulk] {s}: ERROR — {res['error']}")
+                            elif res.get("filtered"):
+                                # Log as filtered but show the percentage
+                                self.progress.emit(f"[Bulk] {s}: FILTERED ({res['reason']}) — {self._fmt_pct(res.get('best_used'))}")
                             else:
                                 self.progress.emit(f"[Bulk] {s}: OK — {self._fmt_pct(res['best_used'])}")
                             results.append(res)
                         except Exception as e:
                             self.progress.emit(f"[Bulk] {s}: CRITICAL — {e}")
             else:
-                self.progress.emit("[Info] No serials to process after filtering.")
+                self.progress.emit("[Info] No serials to process.")
             
             if QThread.currentThread().isInterruptionRequested():
                  self.finished.emit("[Info] Process Stopped by User.")
                  return
 
-            ok = [r for r in results if "error" not in r]
+            # --- POST-PROCESSING ---
+            # Exclude Filtered items from the Final PDF Summary
+            ok = [r for r in results if "error" not in r and not r.get("filtered", False)]
             ok.sort(key=lambda r: (r.get("best_used") or 0.0), reverse=True)
             top = ok[: self.cfg.top_n]
 

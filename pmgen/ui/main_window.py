@@ -55,8 +55,8 @@ class BulkRunTab(QWidget):
     A self-contained tab for a single bulk processing job.
     Owms its own model, view, and worker thread.
     """
-    inspect_requested = pyqtSignal(str)  # Signal back to MainWindow to inspect a serial
-    finished = pyqtSignal()              # Signal when run is complete
+    inspect_requested = pyqtSignal(str)
+    finished = pyqtSignal()
 
     def __init__(self, config: BulkConfig, runner_kwargs: dict, parent=None):
         super().__init__(parent)
@@ -109,8 +109,13 @@ class BulkRunTab(QWidget):
         self.view = QTableView()
         self.model = BulkQueueModel()
         self.view.setModel(self.model)
-        self.view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.view.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        self.view.setSortingEnabled(True)
+        self.view.setColumnWidth(2, 160)
+        self.view.setColumnWidth(3, 300)
+        header = self.view.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setStretchLastSection(True)
         self.view.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
         self.view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.view.customContextMenuRequested.connect(self._on_context_menu)
