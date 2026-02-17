@@ -1,7 +1,6 @@
-# pmgen/io/fetch_serials.py
 from __future__ import annotations
 
-from typing import List, Iterable
+from typing import List, Iterable, Dict
 import re
 import requests
 
@@ -10,9 +9,6 @@ try:
 except Exception:
     BeautifulSoup = None
 
-# ─────────────────────────────────────────────────────────────
-# Endpoint & headers (matches old_http_client.py)
-# ─────────────────────────────────────────────────────────────
 BASE_URL = "https://eservice.toshiba-solutions.com"
 LOGIN_PAGE = f"{BASE_URL}/Account/LogOn"
 DEVICE_INDEX = f"{BASE_URL}/Device/Index"
@@ -82,6 +78,71 @@ def parse_serial_numbers(html: str) -> List[str]:
         found.append(m.group(0))
 
     return _dedupe_preserve_order(found)
+
+def parse_customer_map(html: str) -> Dict[str, str]:
+    """
+    Parses HTML to create a mapping of { Serial_Number : Customer_Name }.
+    """
+    if not isinstance(html, str) or not html:
+        return {}
+
+    data_map: Dict[str, str] = {}
+
+    if BeautifulSoup is not None:
+        try:
+            soup = BeautifulSoup(html, "html.parser")
+            
+            for serial_el in soup.select(".deviceSerialNumbers"):
+                serial = serial_el.get_text(strip=True)
+                
+                if serial:
+                    row = serial_el.find_parent("tr")
+                    
+                    if row:
+                        cust_el = row.select_one(".deviceCustomers")
+                        if cust_el:
+                            customer_name = cust_el.get_text(strip=True)
+                            
+                            if serial not in data_map:
+                                data_map[serial] = customer_name
+                                
+        except Exception as e:
+            # Log error if needed, or pass
+            pass
+
+    return data_map
+
+def parse_description_map(html: str) -> Dict[str, str]:
+    """
+    Parses HTML to create a mapping of { Serial_Number : Description }.
+    """
+    if not isinstance(html, str) or not html:
+        return {}
+
+    data_map: Dict[str, str] = {}
+
+    if BeautifulSoup is not None:
+        try:
+            soup = BeautifulSoup(html, "html.parser")
+            
+            for serial_el in soup.select(".deviceSerialNumbers"):
+                serial = serial_el.get_text(strip=True)
+                
+                if serial:
+                    row = serial_el.find_parent("tr")
+                    
+                    if row:
+                        desc_el = row.select_one(".deviceDescription")
+                        if desc_el:
+                            description = desc_el.get_text(strip=True)
+                            
+                            if serial not in data_map:
+                                data_map[serial] = description
+
+        except Exception:
+            pass
+
+    return data_map
 
 # ─────────────────────────────────────────────────────────────
 # Public API used by http_client.SessionPool callers

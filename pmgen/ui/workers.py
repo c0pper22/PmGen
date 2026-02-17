@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime
 from PyQt6.QtCore import QObject, pyqtSignal, QThread
+from typing import Dict
 
 @dataclass
 class BulkConfig:
@@ -22,18 +23,21 @@ class BulkRunner(QObject):
     progress = pyqtSignal(str)
     progress_value = pyqtSignal(int, int)
     finished = pyqtSignal(str)
-    # Signal Signature: (Serial, Status, Result, Model, UnpackDate)
     item_updated = pyqtSignal(str, str, str, str, str)
 
     def __init__(self, cfg: BulkConfig, threshold: float, life_basis: str,
                  threshold_enabled: bool = True,
                  unpack_max_enabled: bool = False, unpack_max_months: int = 0,
-                 unpack_min_enabled: bool = False, unpack_min_months: int = 0):
+                 unpack_min_enabled: bool = False, unpack_min_months: int = 0,
+                 customer_map: Dict[str,str] = {}):
         super().__init__()
         self.cfg = cfg
         self.threshold = threshold
         self.life_basis = life_basis
         self.threshold_enabled = bool(threshold_enabled)
+        
+        self.customer_map = customer_map 
+
         self._blacklist = [p.upper() for p in (cfg.blacklist or [])]
 
         self._unpack_max_enabled = bool(unpack_max_enabled)
@@ -50,7 +54,7 @@ class BulkRunner(QObject):
             if fnmatchcase(s, pat): return True
         return False
 
-    def _prefilter_by_unpack_date(self, serials: list[str], pool) -> list[str]:
+    def _prefilter_by_unpack_date(self, serials: list[str], pool):
         if not self._unpack_max_enabled and not self._unpack_min_enabled:
             self.progress.emit("[Info] Unpack date filters disabled.")
             return list(serials)
@@ -80,7 +84,6 @@ class BulkRunner(QObject):
             today = date.today()
 
             for s in serials:
-                # CHANGE 2: Check for stop signal during pre-filtering
                 if QThread.currentThread().isInterruptionRequested():
                     self.progress.emit("[Info] Date check stopped by user.")
                     return kept
@@ -181,7 +184,6 @@ class BulkRunner(QObject):
 
             kept_serials = self._prefilter_by_unpack_date(serials1, pool)
             
-            # Stop check in case user stopped during pre-filter
             if QThread.currentThread().isInterruptionRequested():
                 self.finished.emit("[Info] Stopped.")
                 return
@@ -201,6 +203,9 @@ class BulkRunner(QObject):
 
             def work(serial: str):
                 self.item_updated.emit(serial, "Processing", "...", "", "")
+                
+                cust_name = self.customer_map.get(serial, "")
+
                 try:
                     with pool.acquire() as sess:
                         blob = get_service_file_bytes(serial, "PMSupport", sess=sess)
@@ -218,7 +223,8 @@ class BulkRunner(QObject):
                     create_pdf_report(
                         report=report, selection=selection, threshold=thr, life_basis=basis,
                         show_all=show_all, out_dir=final_out_dir, threshold_enabled=thr_enabled,
-                        unpacking_date=unpack_date
+                        unpacking_date=unpack_date,
+                        customer_name=cust_name
                     )
 
                     pct_str = self._fmt_pct(best_used)
@@ -231,6 +237,7 @@ class BulkRunner(QObject):
                         "model": model_name,
                         "best_used": float(best_used),
                         "text": "None",
+                        "customer_name": cust_name, 
                         "grouped": meta.get("selection_pn_grouped", {}) or {},
                         "flat": meta.get("selection_pn", {}) or {},
                         "kit_by_pn": meta.get("kit_by_pn", {}) or {},
@@ -250,10 +257,8 @@ class BulkRunner(QObject):
                     futures = {ex.submit(work, s): s for s in kept_serials}
                     
                     for fut in as_completed(futures):
-                        # CHANGE 3: Check for stop signal inside main loop
                         if QThread.currentThread().isInterruptionRequested():
                             self.progress.emit("[Info] Stop requested. Cancelling pending tasks...")
-                            # Cancel any tasks that haven't started yet
                             for f in futures:
                                 f.cancel()
                             break
@@ -274,7 +279,6 @@ class BulkRunner(QObject):
             else:
                 self.progress.emit("[Info] No serials to process after filtering.")
             
-            # If stopped, we still generate reports for whatever finished
             if QThread.currentThread().isInterruptionRequested():
                  self.finished.emit("[Info] Process Stopped by User.")
                  return

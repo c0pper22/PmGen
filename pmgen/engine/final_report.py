@@ -234,6 +234,8 @@ def write_final_summary_pdf(
         serial = r.get("serial", "UNKNOWN")
         model = r.get("model", "UNKNOWN MODEL")
         best_used = r.get("best_used", 0.0) * 100
+
+        customer = r.get("customer_name", "")   
         
         # Get Unpacking date if available
         unpacking_date = r.get("unpacking_date")
@@ -245,14 +247,19 @@ def write_final_summary_pdf(
         c = _pct_color(best_used)
         hexcolor = f"#{int(c.red*255):02X}{int(c.green*255):02X}{int(c.blue*255):02X}"
         
-        # --- UPDATED HEADER LOGIC ---
-        # Anchor tag + Text. Note: We use the hexcolor for the % score, but keep text white via style
-        unpack_suffix = f" — <font size='12' color='#FFFFFF'>Unpacked: {unpack_str}</font>" if unpack_str else ""
+        # --- UPDATED HEADER LOGIC TO INCLUDE CUSTOMER ---
+        extras = []
+        if customer:
+             extras.append(f"Customer: {customer}")
+        if unpack_str:
+             extras.append(f"Unpacked: {unpack_str}")
         
-        # We wrap the specific colored part in font tags, but the main text uses the style's white color
-        serial_line = f"<a name='{serial}'/>{serial} — <font color='{hexcolor}'>{best_used:.1f}%</font> — {model}{unpack_suffix}"
+        extra_txt = " — ".join(extras)
         
-        # Use the new "SerialHeader" style with background
+        suffix_html = f" — <font size='10' color='#DDDDDD'>{extra_txt}</font>" if extra_txt else ""
+        
+        serial_line = f"<a name='{serial}'/>{serial} — <font color='{hexcolor}'>{best_used:.1f}%</font> — {model}{suffix_html}"
+        
         individual_serials_story.append(Paragraph(serial_line, styles["SerialHeader"]))
 
         grouped   = r.get("grouped") or {}

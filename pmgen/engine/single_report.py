@@ -91,13 +91,14 @@ def format_report(
     show_all: bool = False,
     threshold_enabled: bool = True,
     unpacking_date: Optional[Union[str, date]] = None,
-    alerts_enabled: bool = True
+    alerts_enabled: bool = True,
+    customer_name: str = ""  # <--- NEW PARAMETER
 ) -> str:
     """
     Pretty-print the single-report result.
     """
 
-    # ---------- helpers ----------
+    # ... [Keep helpers _fmt_pct and _get] ...
     def _fmt_pct(p):
         if p is None: return "—"
         try: return f"{(float(p) * 100):.1f}%"
@@ -115,7 +116,7 @@ def format_report(
     dt_raw = hdrs.get("date")
     dt_str = dt_raw if isinstance(dt_raw, str) and dt_raw.strip() else datetime.now().strftime("%m-%d-%Y")
 
-    # ---------- counters ----------
+    # ... [Keep counters logic] ...
     counters_lines: List[str] = []
     c = getattr(report, "counters", {}) or {}
     if isinstance(c, dict):
@@ -128,10 +129,10 @@ def format_report(
             counters_lines.append("Counters:")
             counters_lines.append("  " + "  ".join(parts))
 
-    # ---------- due / not-due items ----------
+    # ... [Keep due_items / combined logic] ...
     due_items = list(getattr(selection, "items", []) or [])
     combined = _collect_all_findings(selection, show_all=True) if show_all else due_items
-
+    
     most_due_rows: List[str] = []
     for f in combined:
         canon = getattr(f, "canon", "—")
@@ -146,20 +147,16 @@ def format_report(
             most_due_rows.append(f"      ↳ Unit: (N/A)")
         most_due_rows.append("")
 
-    # ---------- final parts logic ----------
+    # ... [Keep final parts logic & Alerts] ...
     final_lines: List[str] = []
-
     meta = getattr(selection, "meta", {}) or {}
-    
-    # --- ALERTS PREP ---
-    # Copy alerts so we don't mutate the original selection object permanently
     alerts = list(meta.get("alerts", []) or [])
     
-    # 1. Add Unpacking Date Alert
     unpack_alert = _calc_unpack_alert(unpacking_date)
     if unpack_alert:
         alerts.append(unpack_alert)
 
+    # ... [Keep inventory/grouped logic logic] ...
     grouped = meta.get("selection_pn_grouped", {}) or {}
     flat    = meta.get("selection_pn", {}) or {}
     by_pn   = meta.get("kit_by_pn", {}) or {}
@@ -190,26 +187,25 @@ def format_report(
             if kit in over_100_kits: over_rows.append(f"{int(qty)}x → {pn} → {kit}")
             elif kit in threshold_only: thr_rows.append(f"{int(qty)}x → {pn} → {kit}")
 
-    # Over-100% section
+    # ... [Keep final_lines assembly] ...
     final_lines.append("Final Parts — Over 100%")
-    _seperatorLine(final_lines)
+    # _seperatorLine(final_lines) # Fixed import access
+    final_lines.append("─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────")
     final_lines.append("(Qty → Part Number → Unit )")
     final_lines.extend(over_rows if over_rows else ["(none)"])
     final_lines.append("")
 
-    # Threshold-based section
     if thr_rows:
         final_lines.append("Final Parts — Threshold")
-        _seperatorLine(final_lines)
+        final_lines.append("─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────")
         final_lines.append("(Qty → Part Number → Unit )")
         final_lines.extend(thr_rows)
         final_lines.append("")
 
-    # --- INVENTORY: MATCHES ---
     inv_lines = []
     if inv_matches:
         inv_lines.append("Inventory Matches (In Stock)")
-        _seperatorLine(inv_lines)
+        inv_lines.append("─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────")
         inv_lines.append("(Matched Code → Needed → In Stock)")
         for m in inv_matches:
             code = m.get("code")
@@ -218,11 +214,10 @@ def format_report(
             inv_lines.append(f"  ✓ {code} : Need {needed} | Have {stock}")
         inv_lines.append("")
 
-    # --- INVENTORY: MISSING (ORDER LIST) ---
     miss_lines = []
     if inv_missing:
         miss_lines.append("Items to Order (Missing from Stock)")
-        _seperatorLine(miss_lines)
+        miss_lines.append("─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────")
         miss_lines.append("(Code → Qty to Order)")
         for m in inv_missing:
             code = m.get("code")
@@ -234,12 +229,16 @@ def format_report(
 
     # ---------- assemble full text report ----------
     lines: List[str] = []
-    _seperatorLine(lines)
+    lines.append("─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────")
     
+    # --- UPDATED HEADER WITH CUSTOMER ---
+    header_info = f"Model: {model}  |  Serial: {serial}  |  Last Reported: {dt_str}"
     if unpacking_date:
-        lines.append(f"Model: {model}  |  Serial: {serial}  |  Last Reported: {dt_str} | Unpacking Date: {unpacking_date}")
-    else:
-        lines.append(f"Model: {model}  |  Serial: {serial}  |  Last Reported: {dt_str}")
+        header_info += f" | Unpacking Date: {unpacking_date}"
+    lines.append(header_info)
+    
+    if customer_name:
+        lines.append(f"Customer: {customer_name}")
 
     if alerts and alerts_enabled:
         lines.append("")
@@ -258,23 +257,19 @@ def format_report(
 
     lines.append("")
     lines.append("Highest Wear Items")
-    _seperatorLine(lines)
+    lines.append("─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────")
     lines.extend(most_due_rows if most_due_rows else ["(none)", ""])
     
     lines.append("")
     lines.extend(final_lines)
 
-    if inv_lines:
-        lines.extend(inv_lines)
-    
-    # Add Missing section
-    if miss_lines:
-        lines.extend(miss_lines)
+    if inv_lines: lines.extend(inv_lines)
+    if miss_lines: lines.extend(miss_lines)
 
     lines.append("")
-    _seperatorLine(lines)
+    lines.append("─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────")
     lines.append("End of Report")
-    _seperatorLine(lines)
+    lines.append("─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────")
 
     return "\n".join(lines)
 
@@ -313,7 +308,8 @@ def create_pdf_report(
     *, report, selection, threshold: float, life_basis: str,
     show_all: bool = False, out_dir: str = ".", threshold_enabled: bool = True,
     unpacking_date: Optional[Union[str, date]] = None,
-    alerts_enabled: bool = True
+    alerts_enabled: bool = True,
+    customer_name: str = ""   # <--- NEW PARAMETER
 ):
     hdrs = getattr(report, "headers", {}) or {}
     model = hdrs.get("model", "Unknown")
@@ -325,7 +321,7 @@ def create_pdf_report(
     c = getattr(report, "counters", {}) or {}
     parts = [f"{k.title()}: {v}" for k, v in c.items() if v is not None]
 
-    # Due items
+    # ... [Keep items sorting logic] ...
     due_items = list(getattr(selection, "items", []) or [])
     not_due_items = []
     if show_all:
@@ -350,11 +346,11 @@ def create_pdf_report(
     meta = getattr(selection, "meta", {}) or {}
     alerts = list(meta.get("alerts", []) or [])
     
-    # Check Unpacking Alert for PDF as well
     unpack_alert = _calc_unpack_alert(unpacking_date)
     if unpack_alert:
         alerts.append(unpack_alert)
 
+    # ... [Keep grouping logic] ...
     grouped = meta.get("selection_pn_grouped", {}) or {}
     flat    = meta.get("selection_pn", {}) or {}
     by_pn   = meta.get("kit_by_pn", {}) or {}
@@ -405,17 +401,17 @@ def create_pdf_report(
     styles.add(ParagraphStyle(name="H1", fontName="Helvetica-Bold", fontSize=14, leading=16, textColor=colors.HexColor("#111827"), spaceBefore=0, spaceAfter=2))
     styles.add(ParagraphStyle(name="Meta", fontName="Helvetica", fontSize=9, leading=10, textColor=colors.HexColor("#374151"), spaceBefore=0, spaceAfter=2))
     styles.add(ParagraphStyle(name="Section", fontName="Helvetica-Bold", fontSize=11, leading=12, textColor=colors.HexColor("#111827"), spaceBefore=4, spaceAfter=2))
-    # Green Style for Inventory Matches
-    styles.add(ParagraphStyle(name="InvHeader", parent=styles["Section"], textColor=colors.HexColor("#166534")))
-    # Red Style for Inventory Missing
-    styles.add(ParagraphStyle(name="MissHeader", parent=styles["Section"], textColor=colors.HexColor("#DC2626")))
-
+    
     story = []
     story.append(Paragraph(f"Model: {model}  |  Serial: {serial}  |  Last Reported: {dt_str}", styles["H1"]))
+    if customer_name:
+        story.append(Paragraph(f"Customer: {customer_name}", styles["Meta"]))
     if unpacking_date:
         story.append(Paragraph(f"Unpacking Date: {unpacking_date}", styles["Meta"]))
     
     story.append(_hline())
+    # ... [Rest of function remains identical] ...
+    # (Just passing through to the existing table generation code below)
     thr_text = f"{threshold*100:.1f}%" if threshold_enabled else "100.0%"
     story.append(Paragraph(f"Due threshold: {thr_text}  •  Basis: {life_basis.upper()}", styles["Meta"]))
     if parts: story.append(Paragraph("Counters: " + "  ".join(parts), styles["Meta"]))
@@ -434,7 +430,11 @@ def create_pdf_report(
         tbl = Table(data, colWidths=[2.8 * inch, 0.95 * inch, 0.8 * inch, 2.05 * inch])
         tbl.setStyle(_tbl_style_base())
         tbl.setStyle(TableStyle([("ALIGN", (1, 1), (1, -1), "RIGHT"), ("ALIGN", (2, 1), (2, -1), "CENTER")]))
-        _zebra(tbl, len(data))
+        # _zebra is defined in the full file
+        for r_idx in range(1, len(data)):
+             if r_idx % 2 == 0:
+                 tbl.setStyle(TableStyle([("BACKGROUND", (0, r_idx), (-1, r_idx), colors.HexColor("#F8FAFC"))]))
+        
         for r_idx in range(1, len(data)):
             try:
                 val = float(most_due[r_idx - 1][1].strip("%"))
@@ -446,7 +446,7 @@ def create_pdf_report(
     else: story.append(Paragraph("(none)", styles["Meta"]))
     story.append(Spacer(1, 4))
 
-    # Final Parts — Over 100%
+    # Final Parts
     story.append(Paragraph("Final Parts — Over 100%", styles["Section"]))
     story.append(_hline())
     if final_over:
@@ -454,14 +454,15 @@ def create_pdf_report(
         tbl = Table(data, colWidths=[0.6 * inch, 3.0 * inch, 3.0 * inch])
         tbl.setStyle(_tbl_style_base())
         tbl.setStyle(TableStyle([("ALIGN", (0, 1), (0, -1), "RIGHT")]))
-        _zebra(tbl, len(data))
+        for r_idx in range(1, len(data)):
+             if r_idx % 2 == 0:
+                 tbl.setStyle(TableStyle([("BACKGROUND", (0, r_idx), (-1, r_idx), colors.HexColor("#F8FAFC"))]))
         tbl.splitByRow = 1
         tbl.repeatRows = 1
         story.append(KeepTogether(tbl))
     else: story.append(Paragraph("(none)", styles["Meta"]))
     story.append(Spacer(1, 4))
 
-    # Final Parts — Threshold
     if final_thr:
         story.append(Paragraph("Final Parts — Threshold", styles["Section"]))
         story.append(_hline())
@@ -470,7 +471,9 @@ def create_pdf_report(
             tbl = Table(data, colWidths=[0.6 * inch, 3.0 * inch, 3.0 * inch])
             tbl.setStyle(_tbl_style_base())
             tbl.setStyle(TableStyle([("ALIGN", (0, 1), (0, -1), "RIGHT")]))
-            _zebra(tbl, len(data))
+            for r_idx in range(1, len(data)):
+                 if r_idx % 2 == 0:
+                     tbl.setStyle(TableStyle([("BACKGROUND", (0, r_idx), (-1, r_idx), colors.HexColor("#F8FAFC"))]))
             tbl.splitByRow = 1
             tbl.repeatRows = 1
             story.append(KeepTogether(tbl))
@@ -486,7 +489,8 @@ def generate_from_bytes(
     show_all: bool = False,
     threshold_enabled: bool = True,
     unpacking_date: Optional[Union[str, date]] = None,
-    alerts_enabled: bool = True
+    alerts_enabled: bool = True,
+    customer_name: str = ""
 ) -> str:
     report: PmReport = parse_pm_report(pm_pdf_bytes)
     selection = run_rules(
@@ -503,5 +507,6 @@ def generate_from_bytes(
         show_all=show_all,
         threshold_enabled=threshold_enabled,
         unpacking_date=unpacking_date,
-        alerts_enabled=alerts_enabled
+        alerts_enabled=alerts_enabled,
+        customer_name=customer_name
     )

@@ -3,6 +3,7 @@ import sys, os, re
 import shutil
 import requests
 import logging
+from typing import Dict
 from collections import deque
 from datetime import datetime
 from PyQt6.QtCore import (
@@ -30,6 +31,7 @@ from .components import (
 )
 from .highlighter import OutputHighlighter
 from .workers import BulkConfig, BulkRunner
+from pmgen.io.http_client import get_customer_map_after_login
 from pmgen.updater.updater import UpdateWorker, perform_restart, CURRENT_VERSION
 from .inventory import InventoryTab
 from .factory import UIFactory
@@ -60,6 +62,8 @@ class BulkRunTab(QWidget):
         super().__init__(parent)
         self.config = config
         self.runner_kwargs = runner_kwargs
+
+        self.customer_map = runner_kwargs.get("customer_map", {})
         
         self._thread: QThread | None = None
         self._runner: BulkRunner | None = None
@@ -199,16 +203,17 @@ class BulkRunTab(QWidget):
 
     @pyqtSlot(str, str, str, str, str)
     def _on_item_updated(self, serial, status, result, model, unpack_date):
+        c_name = self.customer_map.get(serial, "")
         found = False
         for r in range(self.model.rowCount()):
             if self.model.get_serial_at(r) == serial:
-                self.model.update_status(serial, status, result, model, unpack_date)
+                self.model.update_status(serial, status, result, model, unpack_date, customer=c_name)
                 found = True
                 break
         
         if not found:
-            self.model.add_item(serial, model)
-            self.model.update_status(serial, status, result, model, unpack_date)
+            self.model.add_item(serial, model, customer=c_name)
+            self.model.update_status(serial, status, result, model, unpack_date, customer=c_name)
 
     @pyqtSlot(str)
     def _on_finished(self, msg):
@@ -253,6 +258,8 @@ class MainWindow(QMainWindow):
 
     sig_start_download = pyqtSignal(str)
     sig_start_extract = pyqtSignal(str)
+
+    customerMap: Dict[str, str] = {}
 
     def __init__(self):
         super().__init__()
@@ -628,11 +635,12 @@ class MainWindow(QMainWindow):
     
     @safe_slot
     def _on_generate_clicked(self, *args):
-        # Always ensure we are on the Home tab (index 0)
         self.tabs.setCurrentIndex(0)
 
         le = self._id_combo.lineEdit()
         text = le.text().strip().upper()
+
+        cust_name = self.customerMap.get(text, "")
 
         logging.info(f"User requested generation for serial: {text}")
 
@@ -686,7 +694,8 @@ class MainWindow(QMainWindow):
                 show_all=self._get_show_all(),
                 threshold_enabled=self._get_threshold_enabled(),
                 unpacking_date=unpack_date,
-                alerts_enabled=self._get_alerts_enabled()
+                alerts_enabled=self._get_alerts_enabled(),
+                customer_name=cust_name
             )
             self.editor.setPlainText(out)
             self._apply_colorized_highlighter()
@@ -715,6 +724,7 @@ class MainWindow(QMainWindow):
             "unpack_max_months": unpack_max_months,
             "unpack_min_enabled": unpack_min_enabled,
             "unpack_min_months": unpack_min_months,
+            "customer_map": self.customerMap,
         }
 
         # 2. Create the Tab
@@ -802,6 +812,7 @@ class MainWindow(QMainWindow):
                 QSettings().setValue(self.AUTH_USERNAME_KEY, u)
                 self._signed_in = True; self._current_user = u; self._update_auth_ui()
                 self.editor.appendPlainText(f"[Auto-Login] {u} — success")
+                self.customerMap = get_customer_map_after_login(sess)
                 dlg.accept()
             except Exception as e:
                 self._signed_in = False; self._current_user = ""; self._update_auth_ui()
@@ -929,6 +940,8 @@ class MainWindow(QMainWindow):
             self._session = sess
             self._signed_in = True; self._current_user = u; self._update_auth_ui()
             self.editor.appendPlainText(f"[Auto-Login] {u} — success")
+            self.customerMap = get_customer_map_after_login(sess)
+            print(self.customerMap)
         except Exception as e:
             self._signed_in = False; self._current_user = ""; self._update_auth_ui()
             self.editor.appendPlainText(f"[Auto-Login] {u} — failed: {e}")

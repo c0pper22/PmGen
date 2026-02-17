@@ -16,7 +16,7 @@ import weakref
 from weakref import WeakSet
 # from pmgen.ui.main_window import SERVICE_NAME # Circular import risk, handled below
 SERVICE_NAME = "PmGen"
-from pmgen.io.fetch_serials import parse_serial_numbers
+from pmgen.io.fetch_serials import parse_serial_numbers, parse_customer_map, parse_description_map
 
 # Logging (safe; excludes credentials)
 LOG_DIR = os.path.join(os.path.expanduser("~"), ".indybiz_pm")
@@ -299,6 +299,14 @@ def get_serials_after_login(sess: requests.Session) -> List[str]:
     serials = parse_serial_numbers(html)
     return serials
 
+def get_customer_map_after_login(sess: requests.Session) -> Dict[str, str]:
+    r = sess.get(DEVICE_INDEX, headers=HEADERS_COMMON, timeout=30, allow_redirects=True)
+    r.raise_for_status()
+    html = r.text
+    customer_map: Dict[str, str] = {}
+    customer_map = parse_customer_map(html)
+    return customer_map
+
 def _parse_unpacking_date_from_08_bytes(blob: bytes) -> Optional[date]:
     """
     Look for the 08 Setting Mode "Unpacking date" (code 3612).
@@ -363,16 +371,72 @@ def _parse_model_from_08_bytes(blob: bytes) -> str:
         pass
     return "Unknown"
 
+def _parse_code_from_08_bytes(code: int, blob: bytes) -> str:
+    """
+    Parses the 08 setting mode data blob and returns the data value for the given code.
+    
+    Args:
+        code (int): The code to search for.
+        blob (bytes): The byte content of the CSV file.
+    Returns:
+        str: The value from the DATA column corresponding to the code.
+             Returns an empty string if the code is not found.
+    """
+    try:
+        text = blob.decode('utf-8')
+    except UnicodeDecodeError:
+        text = blob.decode('latin-1', errors='replace')
+        
+    lines = text.splitlines()
+    
+    target_code_str = str(code)
+    start_processing = False
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+            
+        if line.startswith("CODE,"):
+            start_processing = True
+            continue
+            
+        if not start_processing:
+            continue
+            
+        parts = line.split(',')
+        
+        if len(parts) < 2:
+            continue
+            
+        current_code = parts[0].strip()
+        
+        if current_code == target_code_str:
+
+            if parts[-1].strip() == '':
+                data_parts = parts[2:-1]
+            else:
+                data_parts = parts[2:]
+            
+            return ",".join(data_parts).strip()
+            
+    return ""
+
 def get_device_info_08(serial: str, sess: Optional[requests.Session] = None) -> Dict:
     """
     Fetch the 08 Setting Mode file and return both Date and Model.
     Returns: {'date': datetime.date | None, 'model': str}
     """
+
+
     try:
         blob = get_service_file_bytes(serial, option="08", sess=sess)
+
+        # data_8888 = _parse_code_from_08_bytes(8888,blob)
+        # print(f"DEBUG: Serial {serial} -> Code 8888: {data_8888}")
         return {
             "date": _parse_unpacking_date_from_08_bytes(blob),
-            "model": _parse_model_from_08_bytes(blob)
+            "model": _parse_model_from_08_bytes(blob),
         }
     except Exception:
         return {"date": None, "model": "Unknown"}
