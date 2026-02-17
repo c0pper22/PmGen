@@ -1,0 +1,226 @@
+from __future__ import annotations
+import os
+import sys
+from PyQt6.QtCore import Qt, QSize, QRegularExpression
+from PyQt6.QtGui import QAction, QIcon, QRegularExpressionValidator
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QToolBar, QSizePolicy, QToolButton, 
+    QHBoxLayout, QLabel, QMenu, QPushButton, QComboBox, 
+    QCompleter, QLineEdit
+)
+
+from pmgen.system.wrappers import safe_slot
+from .components import DragRegion, TitleDragLabel, CustomMessageBox
+from pmgen.updater.updater import CURRENT_VERSION
+
+BORDER_WIDTH = 8
+
+class UIFactory:
+    """
+    Encapsulates the creation of complex UI bars (Toolbar, Secondary Bar)
+    to keep MainWindow clean.
+    """
+    def __init__(self, icon_dir: str):
+        self._icon_dir = icon_dir
+
+    def create_toolbar(self, window) -> QToolBar:
+        """
+        Builds the main top toolbar and assigns necessary actions to the window.
+        """
+        tb = QToolBar("Window Controls", window)
+        tb.setMovable(False)
+        tb.setFloatable(False)
+        tb.setContextMenuPolicy(Qt.ContextMenuPolicy.PreventContextMenu)
+        tb.setContentsMargins(0, 0, 0, 0)
+        tb.setMouseTracking(True)
+
+        bar = QWidget()
+        bar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        bar.setMouseTracking(True)
+        
+        h = QHBoxLayout(bar)
+        h.setContentsMargins(BORDER_WIDTH, BORDER_WIDTH, BORDER_WIDTH, 0)
+        h.setSpacing(0)
+
+        # --- Settings Menu ---
+        settings_btn = QToolButton()
+        settings_btn.setObjectName("SettingsBtn")
+        settings_btn.setText("Settings ▾")
+        settings_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        settings_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+        settings_btn.setFixedHeight(36)
+        
+        settings_menu = QMenu(settings_btn)
+        
+        window.act_login = QAction("Login", window)
+        window.act_login.triggered.connect(window._open_login_dialog)
+        
+        window.act_logout = QAction("Logout", window)
+        window.act_logout.triggered.connect(window._logout)
+        
+        settings_menu.addAction(window.act_login)
+        settings_menu.addAction(window.act_logout)
+        
+        act_due = QAction("Optional Threshold", window)
+        act_due.triggered.connect(window._open_due_threshold_dialog)
+        settings_menu.addAction(act_due)
+        
+        act_basis = QAction("Life Basis", window)
+        act_basis.triggered.connect(window._open_life_basis_dialog)
+        settings_menu.addAction(act_basis)
+        
+        act_show_all = QAction("Show All Items", window)
+        act_show_all.setCheckable(True)
+        act_show_all.setChecked(window._get_show_all())
+        act_show_all.toggled.connect(window._set_show_all)
+        settings_menu.addAction(act_show_all)
+        
+        act_color = QAction("Colorized Output", window)
+        act_color.setCheckable(True)
+        act_color.setChecked(window._get_colorized())
+        act_color.toggled.connect(lambda c: (window._set_colorized(c), window._apply_colorized_highlighter()))
+        settings_menu.addAction(act_color)
+        
+        act_clear = QAction("Clear Output Window", window)
+        act_clear.triggered.connect(window._clear_output_window)
+        settings_menu.addAction(act_clear)
+        
+        act_about = QAction("About", window)
+        act_about.triggered.connect(window._show_about)
+        settings_menu.addAction(act_about)
+        
+        settings_btn.setMenu(settings_menu)
+
+        act_alerts = QAction("Enable System Alerts", window)
+        act_alerts.setCheckable(True)
+        act_alerts.setChecked(window._get_alerts_enabled())
+        act_alerts.toggled.connect(window._set_alerts_enabled)
+        settings_menu.addAction(act_alerts)
+
+        # --- Bulk Menu ---
+        bulk_btn = QToolButton()
+        bulk_btn.setObjectName("BulkBtn")
+        bulk_btn.setText("Bulk ▾")
+        bulk_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        bulk_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+        bulk_btn.setFixedHeight(36)
+        
+        bulk_menu = QMenu(bulk_btn)
+        act_run_bulk = QAction("New Bulk Run", window)
+        act_run_bulk.triggered.connect(window._start_bulk)
+        act_bulk_settings = QAction("Bulk Settings", window)
+        act_bulk_settings.triggered.connect(window._open_bulk_settings)
+        bulk_menu.addAction(act_run_bulk)
+        bulk_menu.addSeparator()
+        bulk_menu.addAction(act_bulk_settings)
+        bulk_btn.setMenu(bulk_menu)
+
+        # --- Title Bar Elements ---
+        # Note: We pass 'window' as parent for drag regions so they move the window
+        drag_left = DragRegion(window)
+        title = TitleDragLabel(f"PmGen {CURRENT_VERSION}", window)
+        drag_right = DragRegion(window)
+
+        btn_update = QToolButton()
+        btn_update.setObjectName("DialogBtn")
+        icon_path = os.path.join(self._icon_dir, "update.svg") 
+        if os.path.exists(icon_path):
+            btn_update.setIcon(QIcon(icon_path))
+        else:
+            btn_update.setText("Update")
+
+        btn_update.setToolTip("Check for Updates")
+        
+        if not getattr(sys, 'frozen', False):
+            btn_update.clicked.connect(lambda: CustomMessageBox.info(window, "Failed", "You are not running a compiled version...", self._icon_dir))
+        else:                
+            btn_update.clicked.connect(lambda: window._start_update_check(silent=False))
+
+        btn_min = QToolButton()
+        btn_min.setDefaultAction(QAction(QIcon(os.path.join(self._icon_dir, "minimize.svg")), "Min", window, triggered=window.showMinimized))
+        
+        window._act_full = QAction(QIcon(os.path.join(self._icon_dir, "fullscreen.svg")), "Max", window)
+        window._act_full.setCheckable(True)
+        window._act_full.triggered.connect(window._toggle_fullscreen)
+        
+        btn_full = QToolButton()
+        btn_full.setDefaultAction(window._act_full)
+        
+        btn_exit = QToolButton()
+        btn_exit.setDefaultAction(QAction(QIcon(os.path.join(self._icon_dir, "exit.svg")), "Exit", window, triggered=window._confirm_exit))
+
+        right_box = QWidget()
+        right_l = QHBoxLayout(right_box)
+        right_l.setContentsMargins(0,0,0,0)
+        right_l.setSpacing(0)
+        
+        right_l.addWidget(btn_update)
+        right_l.addWidget(btn_min)
+        right_l.addWidget(btn_full)
+        right_l.addWidget(btn_exit)
+
+        h.addWidget(settings_btn, 0)
+        h.addWidget(bulk_btn, 0)
+        h.addWidget(DragRegion(window), 1)
+        h.addWidget(title, 0)
+        h.addWidget(drag_right, 1)
+        h.addWidget(right_box, 0)
+        
+        tb.addWidget(bar)
+        return tb
+
+    def create_secondary_bar(self, window) -> QWidget:
+        """
+        Builds the bar containing User Info, Thresholds, and the ID Input field.
+        """
+        bar = QWidget(window)
+        bar.setObjectName("SecondaryBar")
+        h = QHBoxLayout(bar)
+        h.setContentsMargins(8, 6, 8, 6)
+        h.setSpacing(8)
+
+        window.user_label = QLabel("Not signed in", bar)
+        window.user_label.setObjectName("UserLabel")
+        h.addWidget(window.user_label, 0, Qt.AlignmentFlag.AlignVCenter)
+        h.addStretch(1)
+
+        window._thr_label = QLabel("", bar)
+        window._thr_label.setObjectName("DialogLabel")
+        
+        window._basis_label = QLabel("", bar)
+        window._basis_label.setObjectName("DialogLabel")
+        
+        window._update_threshold_label()
+        window._update_basis_label()
+        
+        h.addWidget(window._thr_label, 0, Qt.AlignmentFlag.AlignVCenter)
+        h.addWidget(window._basis_label, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        window._id_combo = QComboBox(bar)
+        window._id_combo.setObjectName("IdInput")
+        window._id_combo.setEditable(True)
+        window._id_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        window._id_combo.setMaxVisibleItems(15) 
+        window._id_combo.setMinimumWidth(200)
+        window._id_combo.setFixedHeight(28)
+
+        le = window._id_combo.lineEdit()
+        le.setValidator(QRegularExpressionValidator(QRegularExpression(r"[A-Za-z0-9]*"), window))
+        le.textChanged.connect(window._auto_capitalize)
+
+        completer = QCompleter(window._id_combo.model(), window._id_combo)
+        completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        completer.popup().setObjectName("IdCompleterPopup")
+        window._id_combo.setCompleter(completer)
+
+        window._load_id_history()
+
+        window._generate_btn = QPushButton("Generate", bar)
+        window._generate_btn.setObjectName("GenerateBtn")
+        window._generate_btn.setFixedHeight(28)
+        window._generate_btn.clicked.connect(window._on_generate_clicked)
+
+        h.addWidget(window._id_combo, 0)
+        h.addWidget(window._generate_btn, 0)
+        return bar

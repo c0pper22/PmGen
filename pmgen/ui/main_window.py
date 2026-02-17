@@ -1,11 +1,12 @@
 from __future__ import annotations
 import sys, os, re
+import shutil
 import requests
 import logging
 from collections import deque
 from datetime import datetime
 from PyQt6.QtCore import (
-    Qt, QSize, QPoint, QRect, QEvent, QRegularExpression, 
+    Qt, QSize, QPoint, QRect, QEvent, QRegularExpression,
     QCoreApplication, QSettings, QThread, pyqtSlot, QTimer, pyqtSignal
 )
 from PyQt6.QtGui import (
@@ -30,11 +31,9 @@ from .components import (
 from .highlighter import OutputHighlighter
 from .workers import BulkConfig, BulkRunner
 from pmgen.updater.updater import UpdateWorker, perform_restart, CURRENT_VERSION
-
-# --- IMPORT THE NEW INVENTORY TAB ---
 from .inventory import InventoryTab
+from .factory import UIFactory
 
-import shutil
 
 SERVICE_NAME = "PmGen"
 
@@ -174,10 +173,6 @@ class BulkRunTab(QWidget):
         act_inspect = QAction("Inspect / Generate Single Report", self.view)
         act_inspect.triggered.connect(lambda: self.inspect_requested.emit(serial))
         menu.addAction(act_inspect)
-        
-        # act_open = QAction("Open Output Folder", self.view)
-        # act_open.triggered.connect(self._open_folder)
-        # menu.addAction(act_open)
 
         menu.exec(self.view.viewport().mapToGlobal(pos))
 
@@ -321,12 +316,10 @@ class MainWindow(QMainWindow):
         home_layout.setContentsMargins(0, 8, 0, 0)
         home_layout.setSpacing(6)
 
-        # Move Secondary Bar to Home Tab
-        self._secondary_bar = self._build_secondary_bar()
+        # --- REFACTOR: Use UIFactory ---
+        ui_factory = UIFactory(self._icon_dir)
+        self._secondary_bar = ui_factory.create_secondary_bar(self)
         home_layout.addWidget(self._secondary_bar, 0)
-
-        # NOTE: Removed the shared stack and shared bulk views.
-        # Home Tab is now purely for Single Reports.
 
         self.editor = QPlainTextEdit()
         self.editor.setReadOnly(True)
@@ -346,7 +339,8 @@ class MainWindow(QMainWindow):
 
         self.tabs.tabBar().setTabButton(1, QTabBar.ButtonPosition.RightSide, None)
 
-        self.toolbar = self._build_toolbar()
+        # --- REFACTOR: Use UIFactory ---
+        self.toolbar = ui_factory.create_toolbar(self)
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self.toolbar)
 
         # UPDATER STATE
@@ -395,7 +389,7 @@ class MainWindow(QMainWindow):
             widget.deleteLater()
 
     # =========================================================================
-    #  Settings Management (UNCHANGED)
+    #  Settings Management
     # =========================================================================
     
     def _get_alerts_enabled(self) -> bool:
@@ -473,148 +467,6 @@ class MainWindow(QMainWindow):
     def _set_history(self, items: list[str]):
         self._id_combo.clear()
         for it in items: self._id_combo.addItem(it)
-
-    def _build_toolbar(self) -> QToolBar:
-            tb = QToolBar("Window Controls", self)
-            tb.setMovable(False)
-            tb.setFloatable(False)
-            tb.setContextMenuPolicy(Qt.ContextMenuPolicy.PreventContextMenu)
-            tb.setContentsMargins(0, 0, 0, 0)
-            tb.setMouseTracking(True)
-
-            bar = QWidget()
-            bar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-            bar.setMouseTracking(True)
-            
-            h = QHBoxLayout(bar)
-            h.setContentsMargins(BORDER_WIDTH, BORDER_WIDTH, BORDER_WIDTH, 0)
-            h.setSpacing(0)
-
-            # Settings Menu
-            settings_btn = QToolButton(); settings_btn.setObjectName("SettingsBtn")
-            settings_btn.setText("Settings ▾"); settings_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-            settings_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly); settings_btn.setFixedHeight(36)
-            settings_menu = QMenu(settings_btn)
-            
-            self.act_login = QAction("Login", self); self.act_login.triggered.connect(self._open_login_dialog)
-            self.act_logout = QAction("Logout", self); self.act_logout.triggered.connect(self._logout)
-            settings_menu.addAction(self.act_login); settings_menu.addAction(self.act_logout)
-            
-            act_due = QAction("Optional Threshold", self); act_due.triggered.connect(self._open_due_threshold_dialog)
-            settings_menu.addAction(act_due)
-            
-            act_basis = QAction("Life Basis", self); act_basis.triggered.connect(self._open_life_basis_dialog)
-            settings_menu.addAction(act_basis)
-            
-            act_show_all = QAction("Show All Items", self); act_show_all.setCheckable(True)
-            act_show_all.setChecked(self._get_show_all())
-            act_show_all.toggled.connect(self._set_show_all)
-            settings_menu.addAction(act_show_all)
-            
-            act_color = QAction("Colorized Output", self); act_color.setCheckable(True)
-            act_color.setChecked(self._get_colorized())
-            act_color.toggled.connect(lambda c: (self._set_colorized(c), self._apply_colorized_highlighter()))
-            settings_menu.addAction(act_color)
-            
-            act_clear = QAction("Clear Output Window", self); act_clear.triggered.connect(self._clear_output_window)
-            settings_menu.addAction(act_clear)
-            act_about = QAction("About", self); act_about.triggered.connect(self._show_about)
-            settings_menu.addAction(act_about)
-            settings_btn.setMenu(settings_menu)
-
-            act_alerts = QAction("Enable System Alerts", self)
-            act_alerts.setCheckable(True)
-            act_alerts.setChecked(self._get_alerts_enabled())
-            act_alerts.toggled.connect(self._set_alerts_enabled)
-            settings_menu.addAction(act_alerts)
-
-            # Bulk Menu
-            bulk_btn = QToolButton(); bulk_btn.setObjectName("BulkBtn")
-            bulk_btn.setText("Bulk ▾"); bulk_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-            bulk_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly); bulk_btn.setFixedHeight(36)
-            bulk_menu = QMenu(bulk_btn)
-            act_run_bulk = QAction("New Bulk Run", self); act_run_bulk.triggered.connect(self._start_bulk)
-            act_bulk_settings = QAction("Bulk Settings", self); act_bulk_settings.triggered.connect(self._open_bulk_settings)
-            bulk_menu.addAction(act_run_bulk); bulk_menu.addSeparator(); bulk_menu.addAction(act_bulk_settings)
-            bulk_btn.setMenu(bulk_menu)
-
-            drag_left = DragRegion(self)
-            title = TitleDragLabel(f"PmGen {CURRENT_VERSION}", self)
-            drag_right = DragRegion(self)
-
-            btn_update = QToolButton(); btn_update.setObjectName("DialogBtn")
-            icon_path = os.path.join(self._icon_dir, "update.svg") 
-            if os.path.exists(icon_path):
-                btn_update.setIcon(QIcon(icon_path))
-            else:
-                btn_update.setText("Update")
-
-            btn_update.setToolTip("Check for Updates")
-            if not getattr(sys, 'frozen', False):
-                btn_update.clicked.connect(lambda: CustomMessageBox.info(self, "Failed", f"You are not running a compiled version...", self._icon_dir))
-            else:                
-                btn_update.clicked.connect(lambda: self._start_update_check(silent=False))
-
-            btn_min = QToolButton(); btn_min.setDefaultAction(QAction(QIcon(os.path.join(self._icon_dir, "minimize.svg")), "Min", self, triggered=self.showMinimized))
-            self._act_full = QAction(QIcon(os.path.join(self._icon_dir, "fullscreen.svg")), "Max", self)
-            self._act_full.setCheckable(True); self._act_full.triggered.connect(self._toggle_fullscreen)
-            btn_full = QToolButton(); btn_full.setDefaultAction(self._act_full)
-            btn_exit = QToolButton(); btn_exit.setDefaultAction(QAction(QIcon(os.path.join(self._icon_dir, "exit.svg")), "Exit", self, triggered=self._confirm_exit))
-
-            right_box = QWidget(); right_l = QHBoxLayout(right_box); right_l.setContentsMargins(0,0,0,0); right_l.setSpacing(0)
-            
-            # Add update button BEFORE min/max/close
-            right_l.addWidget(btn_update)
-            right_l.addWidget(btn_min); right_l.addWidget(btn_full); right_l.addWidget(btn_exit)
-
-            h.addWidget(settings_btn, 0); h.addWidget(bulk_btn, 0); h.addWidget(DragRegion(self), 1)
-            h.addWidget(title, 0); h.addWidget(drag_right, 1); h.addWidget(right_box, 0)
-            tb.addWidget(bar)
-            return tb
-
-    def _build_secondary_bar(self) -> QWidget:
-        bar = QWidget(self); bar.setObjectName("SecondaryBar")
-        h = QHBoxLayout(bar); h.setContentsMargins(8, 6, 8, 6); h.setSpacing(8)
-
-        self.user_label = QLabel("Not signed in", bar); self.user_label.setObjectName("UserLabel")
-        h.addWidget(self.user_label, 0, Qt.AlignmentFlag.AlignVCenter)
-        h.addStretch(1)
-
-        self._thr_label = QLabel("", bar); self._thr_label.setObjectName("DialogLabel")
-        self._basis_label = QLabel("", bar); self._basis_label.setObjectName("DialogLabel")
-        self._update_threshold_label(); self._update_basis_label()
-        h.addWidget(self._thr_label, 0, Qt.AlignmentFlag.AlignVCenter)
-        h.addWidget(self._basis_label, 0, Qt.AlignmentFlag.AlignVCenter)
-
-        self._id_combo = QComboBox(bar)
-        self._id_combo.setObjectName("IdInput")
-        self._id_combo.setEditable(True)
-        self._id_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        # Increased max items so the list is actually useful
-        self._id_combo.setMaxVisibleItems(15) 
-        self._id_combo.setMinimumWidth(200)
-        self._id_combo.setFixedHeight(28)
-
-        # 1. Setup the LineEdit (Keep your existing validator)
-        le = self._id_combo.lineEdit()
-        le.setValidator(QRegularExpressionValidator(QRegularExpression(r"[A-Za-z0-9]*"), self))
-        le.textChanged.connect(self._auto_capitalize)
-
-        # 2. Setup the Completer (The new part)
-        # This connects the input to the dropdown list for auto-completion
-        completer = QCompleter(self._id_combo.model(), self._id_combo)
-        completer.setFilterMode(Qt.MatchFlag.MatchContains) # Allows matching text in the middle of the string
-        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-        completer.popup().setObjectName("IdCompleterPopup")
-        self._id_combo.setCompleter(completer)
-
-        self._load_id_history()
-
-        self._generate_btn = QPushButton("Generate", bar); self._generate_btn.setObjectName("GenerateBtn")
-        self._generate_btn.setFixedHeight(28); self._generate_btn.clicked.connect(self._on_generate_clicked)
-
-        h.addWidget(self._id_combo, 0); h.addWidget(self._generate_btn, 0)
-        return bar
 
     def _reset_update_thread(self):
             """

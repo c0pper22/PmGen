@@ -2,7 +2,7 @@ from __future__ import annotations
 import sys
 import shutil
 import os
-import logging # Import logging
+import logging
 from pmgen.io.http_client import get_db_path
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QCoreApplication
