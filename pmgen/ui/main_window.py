@@ -8,7 +8,8 @@ from collections import deque
 from datetime import datetime
 from PyQt6.QtCore import (
     Qt, QSize, QPoint, QRect, QEvent, QRegularExpression,
-    QCoreApplication, QSettings, QThread, pyqtSlot, QTimer, pyqtSignal
+    QCoreApplication, QSettings, QThread, pyqtSlot, QTimer, pyqtSignal,
+    QSortFilterProxyModel, QModelIndex
 )
 from PyQt6.QtGui import (
     QAction, QIcon, QCursor, QRegularExpressionValidator, QKeySequence, 
@@ -47,7 +48,87 @@ BULK_POOL_KEY = "bulk/pool_size"
 BULK_BLACKLIST_KEY = "bulk/blacklist"
 
 # =============================================================================
-#  NEW CLASS: BulkRunTab
+#  NEW CLASS: BulkSortFilterProxyModel
+#  Handles filtering (Search) and custom sorting for the Bulk Table
+# =============================================================================
+class BulkSortFilterProxyModel(QSortFilterProxyModel):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.setSortCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+
+    def filterAcceptsRow(self, source_row, source_parent):
+        """
+        Filters rows based on the search text. 
+        Checks Serial (Col 1), Model (Col 2), and Customer (Col 3).
+        """
+        pattern = self.filterRegularExpression().pattern()
+        if not pattern:
+            return True
+            
+        model = self.sourceModel()
+        
+        # Helper to get string data from a specific column in the source model
+        def get_col_str(col_idx):
+            idx = model.index(source_row, col_idx, source_parent)
+            return str(model.data(idx) or "").lower()
+
+        # Check against Serial, Model, and Customer columns
+        # Visual Mapping: 1=Serial, 2=Model, 3=Customer
+        serial = get_col_str(1)
+        model_name = get_col_str(2)
+        customer = get_col_str(3)
+        
+        p = pattern.lower()
+        return (p in serial) or (p in model_name) or (p in customer)
+
+    def lessThan(self, left: QModelIndex, right: QModelIndex):
+        """
+        Replicates the custom sorting logic from BulkQueueModel 
+        so header clicks work correctly on the Proxy.
+        """
+        left_data = self.sourceModel().data(left)
+        right_data = self.sourceModel().data(right)
+        
+        col = left.column()
+        
+        # --- Sorting Logic for Status (Visual Column 5) ---
+        if col == 5:
+            def status_priority(val):
+                # Done > Failed > Filtered > Queued > Processing
+                if val == "Done": return 0
+                if val == "Failed": return 1
+                if val == "Filtered": return 2
+                if val == "Queued": return 3
+                return 4
+            return status_priority(left_data) < status_priority(right_data)
+            
+        if col == 6:
+            def get_val(val):
+                s_val = str(val)
+                if "%" in s_val:
+                    try: return float(s_val.replace('%', ''))
+                    except: return -1.0
+                return s_val.lower() # Fallback
+            
+            l_v = get_val(left_data)
+            r_v = get_val(right_data)
+            
+            if isinstance(l_v, float) and isinstance(r_v, float):
+                return l_v < r_v
+            return str(l_v) < str(r_v)
+
+        # --- Default String Sort ---
+        return str(left_data).lower() < str(right_data).lower()
+
+    def data(self, index, role=Qt.ItemDataRole.DisplayRole):
+        if role == Qt.ItemDataRole.DisplayRole and index.column() == 0:
+            return str(index.row() + 1)
+        
+        return super().data(index, role)
+
+# =============================================================================
+#  CLASS: BulkRunTab
 #  Encapsulates a single bulk run (UI + Logic + Thread)
 # =============================================================================
 class BulkRunTab(QWidget):
@@ -76,7 +157,7 @@ class BulkRunTab(QWidget):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(6)
 
-        # --- Top Bar: Progress & Status ---
+        # --- Top Bar: Status, Progress, Search, Stop ---
         top_bar = QHBoxLayout()
         
         self.status_label = QLabel("Ready")
@@ -89,15 +170,24 @@ class BulkRunTab(QWidget):
         self.progress_bar.setValue(0)
         self.progress_bar.setTextVisible(False)
 
-        top_bar.addWidget(self.status_label)
-        top_bar.addWidget(self.progress_bar, 1)
-        
-        # Add a "Stop" button
+        # Search Bar
+        self.search_bar = QLineEdit()
+        self.search_bar.setObjectName("BulkSearch")
+        self.search_bar.setPlaceholderText("Search serial, model...")
+        self.search_bar.setClearButtonEnabled(True)
+        self.search_bar.setFixedWidth(200)
+        self.search_bar.textChanged.connect(self._on_search_changed)
+
+        # Stop Button
         self.btn_stop = QPushButton("Stop")
         self.btn_stop.setObjectName("BulkStopBtn")
         self.btn_stop.setFixedHeight(24)
         self.btn_stop.clicked.connect(self.stop)
         self.btn_stop.setEnabled(False) # Enabled when running
+
+        top_bar.addWidget(self.status_label)
+        top_bar.addWidget(self.progress_bar, 1)
+        top_bar.addWidget(self.search_bar) # Add Search Here
         top_bar.addWidget(self.btn_stop)
 
         layout.addLayout(top_bar)
@@ -105,10 +195,19 @@ class BulkRunTab(QWidget):
         # --- Splitter: Table & Logs ---
         splitter = QSplitter(Qt.Orientation.Vertical)
         
-        # 1. The Table
+        # 1. The Table & Models
         self.view = QTableView()
+        
+        # Create base model
         self.model = BulkQueueModel()
-        self.view.setModel(self.model)
+        
+        # Create Proxy Model for Sorting/Filtering
+        self.proxy_model = BulkSortFilterProxyModel(self)
+        self.proxy_model.setSourceModel(self.model)
+        
+        # Assign Proxy to View
+        self.view.setModel(self.proxy_model)
+        
         self.view.setSortingEnabled(True)
         self.view.setColumnWidth(2, 160)
         self.view.setColumnWidth(3, 300)
@@ -171,12 +270,25 @@ class BulkRunTab(QWidget):
             self._thread.requestInterruption()
             self.btn_stop.setEnabled(False)
 
+    def _on_search_changed(self, text):
+        """Updates the proxy filter regex when search bar text changes."""
+        # Use regex to escape special characters if you want exact matching, 
+        # or simple string if you want wildcards. 
+        # Here we just pass the text; QRegularExpression handles it cleanly.
+        regex = QRegularExpression(re.escape(text), QRegularExpression.PatternOption.CaseInsensitiveOption)
+        self.proxy_model.setFilterRegularExpression(regex)
+
     @safe_slot
     def _on_context_menu(self, pos):
-        index = self.view.indexAt(pos)
-        if not index.isValid(): return
+        # Get index from View (This is a Proxy Index)
+        proxy_index = self.view.indexAt(pos)
+        if not proxy_index.isValid(): return
         
-        serial = self.model.get_serial_at(index.row())
+        # Map to Source Index to get the correct row for internal data
+        source_index = self.proxy_model.mapToSource(proxy_index)
+        
+        # Use source index row to get data from the underlying model
+        serial = self.model.get_serial_at(source_index.row())
         
         menu = QMenu(self.view)
         act_inspect = QAction("Inspect / Generate Single Report", self.view)
@@ -225,7 +337,11 @@ class BulkRunTab(QWidget):
         self._log(msg)
         self.status_label.setText("Done")
         self.progress_bar.setValue(self.progress_bar.maximum())
-        self.model.sort_by_status()
+        
+        # We sort the proxy model now, not the source, to update the view
+        # Sort by Status (Col 5), Ascending
+        self.view.sortByColumn(5, Qt.SortOrder.AscendingOrder)
+        
         self.btn_stop.setEnabled(False)
         self.finished.emit()
 
@@ -664,7 +780,7 @@ class MainWindow(QMainWindow):
         unpack_date = None
 
         try:
-            from pmgen.io.http_client import get_service_file_bytes, get_unpacking_date
+            from pmgen.io.http_client import get_service_file_bytes, get_unpacking_date, _parse_code_from_08_bytes
             
             # Fetch PM bytes
             data = get_service_file_bytes(text, "PMSupport", sess=self._session)
@@ -973,6 +1089,32 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, ev):
         self._save_id_history()
+        
+        df = self.tab_tools.model.get_dataframe()
+        
+        if df is not None and not df.empty:
+            dlg = CustomMessageBox(
+                self, 
+                "Active Inventory", 
+                "You have items in your inventory.\nWould you like to keep them for your next session or delete them?", 
+                self._icon_dir, 
+                [("Cancel", "cancel"), ("Delete", "delete"), ("Keep", "keep")]
+            )
+            dlg.exec()
+            
+            choice = dlg._clicked_role or "cancel"
+            
+            if choice == "cancel":
+                ev.ignore()
+                return
+            elif choice == "delete":
+                cache_path = self.tab_tools._get_cache_path()
+                if os.path.exists(cache_path):
+                    try:
+                        os.remove(cache_path)
+                        logging.info("Inventory cache deleted on exit.")
+                    except OSError as e:
+                        logging.error(f"Failed to delete inventory cache: {e}")
         super().closeEvent(ev)
 
     def eventFilter(self, obj, event):

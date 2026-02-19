@@ -318,6 +318,18 @@ QHeaderView::section
     border: none; 
     font-weight: bold;
 }
+QLineEdit#BulkSearch {
+    background: #1e1f22;
+    color: #e9e9e9;
+    border: 1px solid #000000;
+    border-radius: 0;
+    padding: 4px 8px;
+    font-size: 12px;
+}
+
+QLineEdit#BulkSearch:focus {
+    border: 1px solid #44474d;
+}
 """
 
 def apply_static_theme(app: QApplication):

@@ -209,14 +209,13 @@ def write_final_summary_pdf(
         parent=styles["BodyText"], 
         fontName="Helvetica-Bold", 
         fontSize=11, 
-        leading=15, 
-        textColor=colors.white,              # White Text
-        backColor=colors.HexColor("#4B5563"), # Dark Gray Background
-        borderPadding=6,                     # Padding inside the box
+        leading=16,
+        textColor=colors.white,
+        backColor=colors.HexColor("#4B5563"),
+        borderPadding=6,
         spaceBefore=12, 
         spaceAfter=8
     ))
-
     # Style specifically for TOC links (Centered for grid look)
     styles.add(ParagraphStyle(name="TOCLink", parent=styles["BodyText"], fontName="Helvetica", fontSize=10, textColor=colors.blue, alignment=1)) # 1=Center
 
@@ -254,11 +253,14 @@ def write_final_summary_pdf(
         if unpack_str:
              extras.append(f"Unpacked: {unpack_str}")
         
-        extra_txt = " — ".join(extras)
+        extra_txt = " | ".join(extras)
         
-        suffix_html = f" — <font size='10' color='#DDDDDD'>{extra_txt}</font>" if extra_txt else ""
+        if extra_txt:
+            suffix_html = f"<br/><font size='9' color='#D1D5DB'>{extra_txt}</font>"
+        else:
+            suffix_html = ""
         
-        serial_line = f"<a name='{serial}'/>{serial} — <font color='{hexcolor}'>{best_used:.1f}%</font> — {model}{suffix_html}"
+        serial_line = f"<a name='{serial}'/>{serial} &nbsp;|&nbsp; <font color='{hexcolor}'>{best_used:.1f}%</font> &nbsp;|&nbsp; {model}{suffix_html}"
         
         individual_serials_story.append(Paragraph(serial_line, styles["SerialHeader"]))
 

@@ -260,11 +260,11 @@ def format_report(
     lines.append("─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────")
     lines.extend(most_due_rows if most_due_rows else ["(none)", ""])
     
-    lines.append("")
-    lines.extend(final_lines)
+    # lines.append("")
+    # lines.extend(final_lines)
 
-    if inv_lines: lines.extend(inv_lines)
-    if miss_lines: lines.extend(miss_lines)
+    # if inv_lines: lines.extend(inv_lines)
+    # if miss_lines: lines.extend(miss_lines)
 
     lines.append("")
     lines.append("─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────")
@@ -398,7 +398,7 @@ def create_pdf_report(
     styles = getSampleStyleSheet()
     styles.add(ParagraphStyle(name="AlertHeader", parent=styles["Heading4"], textColor=colors.red, spaceBefore=6, spaceAfter=2))
     styles.add(ParagraphStyle(name="AlertText", parent=styles["BodyText"], textColor=colors.red, fontSize=9))
-    styles.add(ParagraphStyle(name="H1", fontName="Helvetica-Bold", fontSize=14, leading=16, textColor=colors.HexColor("#111827"), spaceBefore=0, spaceAfter=2))
+    styles.add(ParagraphStyle(name="H1", fontName="Helvetica-Bold", fontSize=12, leading=16, textColor=colors.HexColor("#111827"), spaceBefore=0, spaceAfter=2))
     styles.add(ParagraphStyle(name="Meta", fontName="Helvetica", fontSize=9, leading=10, textColor=colors.HexColor("#374151"), spaceBefore=0, spaceAfter=2))
     styles.add(ParagraphStyle(name="Section", fontName="Helvetica-Bold", fontSize=11, leading=12, textColor=colors.HexColor("#111827"), spaceBefore=4, spaceAfter=2))
     

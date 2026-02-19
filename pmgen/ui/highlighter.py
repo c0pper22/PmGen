@@ -24,6 +24,8 @@ class OutputHighlighter(QSyntaxHighlighter):
         # Due item pattern
         self.re_due_item = re.compile(r"^\s*•\s+(?P<canon>.+?)\s+—\s+(?P<pct>\S+)(?:\s*→\s*(?P<due>DUE))?\s*$")
         
+        self.re_customer_info = re.compile(r"^\s*Customer:\s*(?P<customer>.+)$")
+
         # Model info pattern
         self.re_model_info = re.compile(
             r"Model:\s*(?P<model>.*?)(?=\s+\|)\s*\|\s*"
@@ -66,6 +68,7 @@ class OutputHighlighter(QSyntaxHighlighter):
         self.fmt_info   = self._mkfmt("#D8B30C", bold=True)
         self.fmt_label  = self._mkfmt("#c0caf5", bold=True)
         self.fmt_alert         = self._mkfmt("#ff0000", bold=True)
+        self.fmt_customer_value = self._mkfmt("#bb97fd", bold=True)
 
         # Bulk Report Styles
         self.fmt_bulk          = self._mkfmt("#a680eb", bold=True)
@@ -166,6 +169,11 @@ class OutputHighlighter(QSyntaxHighlighter):
         if t.startswith("Model:") and "Serial:" in t:
             self._highlight_model_info(text)
             return
+        
+        # --- Customer Info ---
+        if t.startswith("Customer:"):
+            self._highlight_customer(text)
+            return
 
         # --- Labels ---
         if t.startswith("Basis:") or t.startswith("Report Date:"):
@@ -215,14 +223,18 @@ class OutputHighlighter(QSyntaxHighlighter):
         for m in self.re_bulk_serial.finditer(stripped):
             self.setFormat(m.start(), m.end() - m.start(), self.fmt_bulk_serial)
 
+    def _highlight_customer(self, text):
+        """Handles the Customer Name line."""
+        m = self.re_customer_info.search(text)
+        if m:            
+            self.setFormat(m.start("customer"), m.end("customer") - m.start("customer"), self.fmt_customer_value)
+
     def _highlight_due_item(self, text, stripped):
         """Handles lines with bullets or DUE flags."""
         m = self.re_due_item.match(stripped)
         if m:
-            # Overwrite the base white with the grey base
             self.setFormat(0, len(text), self.fmt_due_row_base)
             
-            # Calculate whitespace offset because regex matched on stripped text
             left_ws = len(text) - len(text.lstrip())
 
             def _apply(name, fmt):

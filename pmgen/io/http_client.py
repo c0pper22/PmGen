@@ -431,9 +431,6 @@ def get_device_info_08(serial: str, sess: Optional[requests.Session] = None) -> 
 
     try:
         blob = get_service_file_bytes(serial, option="08", sess=sess)
-
-        # data_8888 = _parse_code_from_08_bytes(8888,blob)
-        # print(f"DEBUG: Serial {serial} -> Code 8888: {data_8888}")
         return {
             "date": _parse_unpacking_date_from_08_bytes(blob),
             "model": _parse_model_from_08_bytes(blob),
