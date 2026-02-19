@@ -4,10 +4,51 @@ import traceback
 from fnmatch import fnmatchcase
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from pmgen.io.http_client import get_service_file_bytes, get_unpacking_date
+from pmgen.engine.single_report import generate_from_bytes
 from datetime import datetime, date
 import calendar
 from PyQt6.QtCore import QObject, pyqtSignal, QThread
 from typing import Dict
+
+
+class SingleReportWorker(QObject):
+    finished = pyqtSignal(str)
+    error = pyqtSignal(str)
+
+    def __init__(self, session, serial, threshold, life_basis, show_all, threshold_enabled, alerts_enabled, customer_name=""):
+        super().__init__()
+        self.session = session
+        self.serial = serial
+        self.threshold = threshold
+        self.life_basis = life_basis
+        self.show_all = show_all
+        self.threshold_enabled = threshold_enabled
+        self.alerts_enabled = alerts_enabled
+        self.customer_name = customer_name
+
+    def run(self):
+        """This runs in the background thread."""
+        try:
+            pm_pdf_bytes = get_service_file_bytes(self.serial, option="PMSupport", sess=self.session)
+            
+            unpacking_date = get_unpacking_date(self.serial, sess=self.session)
+            
+            report_text = generate_from_bytes(
+                pm_pdf_bytes=pm_pdf_bytes,
+                threshold=self.threshold,
+                life_basis=self.life_basis,
+                show_all=self.show_all,
+                threshold_enabled=self.threshold_enabled,
+                unpacking_date=unpacking_date,
+                alerts_enabled=self.alerts_enabled,
+                customer_name=self.customer_name
+            )
+
+            self.finished.emit(report_text)
+
+        except Exception as e:
+            self.error.emit(f"Failed to generate report for {self.serial}:\n{str(e)}")
 
 @dataclass
 class BulkConfig:

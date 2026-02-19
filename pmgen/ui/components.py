@@ -4,7 +4,7 @@ from PyQt6.QtCore import Qt, QPoint, QRect
 from PyQt6.QtGui import QAction, QIcon
 from PyQt6.QtWidgets import (
     QWidget, QMainWindow, QLabel, QDialog, QHBoxLayout, 
-    QToolButton, QVBoxLayout, QFrame, QPushButton, QSizePolicy
+    QToolButton, QVBoxLayout, QFrame, QPushButton, QSizePolicy, QProgressBar
 )
 
 # ---------------------------- Drag Helpers ----------------------------
@@ -232,3 +232,28 @@ class ResizeState:
     edge_bottom: bool = False
     press_pos: QPoint = QPoint()
     press_geom: QRect = QRect()
+
+# ---------------------------- Loading Dialog ----------------------------
+class LoadingDialog(FramelessDialog):
+    def __init__(self, parent, title: str, message: str, icon_dir: str):
+        super().__init__(parent, title, icon_dir)
+        
+        if hasattr(self._titlebar, "_act_max"):
+            for child in self._titlebar.findChildren(QToolButton):
+                child.hide()
+
+        self.message_label = QLabel(message, self._content)
+        self.message_label.setObjectName("DialogLabel")
+        
+        self.progress_bar = QProgressBar(self._content)
+        self.progress_bar.setObjectName("ProgressBar")
+        self.progress_bar.setRange(0, 0)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setFixedHeight(12)
+        
+        self._content_layout.addWidget(self.message_label)
+        self._content_layout.addWidget(self.progress_bar)
+        self._content_layout.addStretch(1)
+        
+        self.setMinimumSize(350, 130)
+        self.resize(350, 130)

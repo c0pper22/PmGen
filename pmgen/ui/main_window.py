@@ -20,7 +20,8 @@ from PyQt6.QtWidgets import (
     QToolBar, QSizePolicy, QToolButton, QHBoxLayout, QLabel, QMenu,
     QPushButton, QLineEdit, QComboBox, QCheckBox, QSlider, 
     QSpinBox, QDoubleSpinBox, QFileDialog, QProgressBar, QCompleter,
-    QTabWidget, QTableView, QHeaderView, QSplitter, QTabBar
+    QTabWidget, QTableView, QHeaderView, QSplitter, QTabBar,
+    QProgressDialog
 )
 
 # Imports from our new split files
@@ -28,10 +29,10 @@ from pmgen.ui.bulk_model import BulkQueueModel
 from pmgen.system.wrappers import safe_slot
 from .theme import apply_static_theme
 from .components import (
-    DragRegion, TitleDragLabel, FramelessDialog, CustomMessageBox, ResizeState
+    DragRegion, TitleDragLabel, FramelessDialog, CustomMessageBox, ResizeState, LoadingDialog
 )
 from .highlighter import OutputHighlighter
-from .workers import BulkConfig, BulkRunner
+from .workers import BulkConfig, BulkRunner, SingleReportWorker
 from pmgen.io.http_client import get_customer_map_after_login
 from pmgen.updater.updater import UpdateWorker, perform_restart, CURRENT_VERSION
 from .inventory import InventoryTab
@@ -756,78 +757,88 @@ class MainWindow(QMainWindow):
     
     @safe_slot
     def _on_generate_clicked(self, *args):
-        self.tabs.setCurrentIndex(0)
+        if getattr(self, '_single_thread', None) is not None and self._single_thread.isRunning():
+            return 
 
-        le = self._id_combo.lineEdit()
-        text = le.text().strip().upper()
-
-        cust_name = self.customerMap.get(text, "")
-
-        logging.info(f"User requested generation for serial: {text}")
-
-        if not text:
-            CustomMessageBox.warn(self, "Missing Serial", "Please Enter A Serial Number", self._icon_dir)
+        serial = self._id_combo.currentText().strip()
+        if not serial:
             return
 
-        items = [text] + [self._id_combo.itemText(i) for i in range(self._id_combo.count()) if self._id_combo.itemText(i).upper() != text]
-        self._set_history(items[:self.MAX_HISTORY])
-        self._save_id_history()
+        threshold = self._get_threshold()
+        life_basis = self._get_life_basis()
+        show_all = self._get_show_all()
+        threshold_enabled = self._get_threshold_enabled()
+        alerts_enabled = self._get_alerts_enabled()
+        
+        session = self._session
+        if not session:
+            self.editor.appendPlainText("Error: You must be logged in to generate a report.")
+            return
 
-        try: from pmgen.engine.single_report import generate_from_bytes
-        except ImportError: from pmgen.engine import generate_from_bytes
+        self.loading_dialog = LoadingDialog(
+            parent=self, 
+            title="Please Wait", 
+            message="Fetching data and generating report...", 
+            icon_dir=self._icon_dir
+        )
+        self.loading_dialog.show()
 
-        data = None
-        unpack_date = None
+        self._single_thread = QThread()
+        self._single_worker = SingleReportWorker(
+            session=session,
+            serial=serial,
+            threshold=threshold,
+            life_basis=life_basis,
+            show_all=show_all,
+            threshold_enabled=threshold_enabled,
+            alerts_enabled=alerts_enabled,
+            customer_name=self.customerMap.get(serial, "")
+        )
+        self._single_worker.moveToThread(self._single_thread)
 
-        try:
-            from pmgen.io.http_client import get_service_file_bytes, get_unpacking_date, _parse_code_from_08_bytes
+        self._single_thread.started.connect(self._single_worker.run)
+        
+        self._single_worker.finished.connect(self._on_single_report_success)
+        self._single_worker.error.connect(self._on_single_report_error)
+        
+        self._single_worker.finished.connect(self._cleanup_single_thread)
+        self._single_worker.error.connect(self._cleanup_single_thread)
+        
+        self._single_thread.finished.connect(self._single_thread.deleteLater)
+        self._single_worker.finished.connect(self._single_worker.deleteLater)
+
+        self._single_thread.finished.connect(self._reset_single_thread)
+
+        self._single_thread.start()
+
+    def _on_single_report_success(self, report_text):
+        """Called automatically when the background worker succeeds."""
+        self.editor.setPlainText(report_text)
+        
+        if hasattr(self, '_apply_colorized_highlighter'):
+             self._apply_colorized_highlighter()
+
+    def _on_single_report_error(self, error_message):
+        """Called automatically if the background worker fails."""
+        self.editor.setPlainText(error_message)
+
+    def _cleanup_single_thread(self):
+        """Closes the loading screen and cleanly stops the thread."""
+        if hasattr(self, 'loading_dialog') and self.loading_dialog:
+            self.loading_dialog.accept()
             
-            # Fetch PM bytes
-            data = get_service_file_bytes(text, "PMSupport", sess=self._session)
-            
-            # NEW: Fetch unpacking date (optional)
-            try:
-                unpack_date = get_unpacking_date(text, sess=self._session)
-            except Exception as e:
-                logging.warning(f"Could not fetch unpacking date for {text}: {e}")
+        self._single_thread.quit()
 
-            print("DEBUG: Download finished! Size:", len(data) if data else 0, flush=True)
-        except Exception:
-            try:
-                if hasattr(self, "act_login"): self.act_login.trigger()
-                from pmgen.io.http_client import get_service_file_bytes as _refetch
-                # Retry fetching report
-                data = _refetch(text, "PMSupport")
-                # We skip retrying unpack_date here to keep fallback simple/fast
-            except Exception as e2:
-                CustomMessageBox.warn(self, "Online fetch failed", str(e2), self._icon_dir)
-
-        if data is None:
-            path, _ = QFileDialog.getOpenFileName(self, "Open PM Report", "", "PM Export (*.csv *.txt);;All Files (*.*)")
-            if not path: return
-            with open(path, "rb") as f: data = f.read()
-
-        try:
-            out = generate_from_bytes(
-                pm_pdf_bytes=data,
-                threshold=self._get_threshold(),
-                life_basis=self._get_life_basis(),
-                show_all=self._get_show_all(),
-                threshold_enabled=self._get_threshold_enabled(),
-                unpacking_date=unpack_date,
-                alerts_enabled=self._get_alerts_enabled(),
-                customer_name=cust_name
-            )
-            self.editor.setPlainText(out)
-            self._apply_colorized_highlighter()
-            logging.info("Report generation successful.")
-        except Exception as e:
-            logging.error(f"Generation failed: {e}")
-            CustomMessageBox.warn(self, "Generate failed", str(e), self._icon_dir)
+    def _reset_single_thread(self):
+        """
+        Clears the python reference to the thread so we don't 
+        accidentally access a deleted C++ object later.
+        """
+        self._single_thread = None
+        self._single_worker = None
 
     @safe_slot
     def _start_bulk(self, *args):
-        # 1. Prepare Config & Args
         cfg = self._get_bulk_config()
         cfg.show_all = self._get_show_all()
         
@@ -848,25 +859,20 @@ class MainWindow(QMainWindow):
             "customer_map": self.customerMap,
         }
 
-        # 2. Create the Tab
         tab = BulkRunTab(cfg, runner_kwargs)
         
-        # 3. Connect Tab Signals to MainWindow Actions
-        # When tab requests inspection, fill serial in Home and generate
         tab.inspect_requested.connect(self._on_bulk_inspect_requested)
         
-        # 4. Add to TabWidget and Select it
         title = f"Bulk {datetime.now().strftime('%H:%M')}"
         idx = self.tabs.addTab(tab, title)
         self.tabs.setCurrentIndex(idx)
         
-        # 5. Start the Job
         tab.start()
         
     @pyqtSlot(str)
     def _on_bulk_inspect_requested(self, serial):
         """Called when a Bulk Tab 'Inspect' context menu is clicked."""
-        self.tabs.setCurrentIndex(0) # Go to Home
+        self.tabs.setCurrentIndex(0)
         self._id_combo.setEditText(serial)
         self._on_generate_clicked()
 
