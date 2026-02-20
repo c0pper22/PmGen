@@ -2,12 +2,31 @@ from PyQt6.QtCore import Qt, QAbstractTableModel, QModelIndex
 from PyQt6.QtGui import QColor, QBrush
 
 class BulkQueueModel(QAbstractTableModel):
-    def __init__(self, parent=None):
+    def __init__(self, custom_col_name="", parent=None):
         super().__init__(parent)
-        self.headers = ["#", "Serial", "Model", "Customer", "Unpack Date", "Status", "Result"]
-        # Internal Data Structure: [Serial, Model, Customer, UnpackDate, Status, Result]
-        # Internal Indices:        0       1      2         3           4       5
+        self.has_custom = bool(custom_col_name)
+        
+        # Build headers dynamically
+        self.headers = ["#", "Serial", "Model", "Customer", "Unpack Date"]
+        if self.has_custom:
+            self.headers.append(custom_col_name)
+        self.headers.extend(["Status", "Result"])
+        
+        # Internal Data Structure is strictly: 
+        # [Serial(0), Model(1), Customer(2), UnpackDate(3), Custom08(4), Status(5), Result(6)]
         self._data = []
+
+        # Map Visual Column Index to Internal Data Index
+        self.visual_to_internal = { 1: 0, 2: 1, 3: 2, 4: 3 }
+        
+        if self.has_custom:
+            self.visual_to_internal.update({ 5: 4, 6: 5, 7: 6 })
+            self.status_col = 6
+            self.result_col = 7
+        else:
+            self.visual_to_internal.update({ 5: 5, 6: 6 })
+            self.status_col = 5
+            self.result_col = 6
 
     def rowCount(self, parent=None):
         return len(self._data)
@@ -23,17 +42,14 @@ class BulkQueueModel(QAbstractTableModel):
         col = index.column()
 
         if role == Qt.ItemDataRole.DisplayRole:
-            # Column 0 is the visual row number
             if col == 0:
                 return str(row + 1)
             
-            # Shift visual columns 1-6 to internal 0-5
-            if 0 < col <= 6:
-                return self._data[row][col - 1]
+            if col in self.visual_to_internal:
+                return self._data[row][self.visual_to_internal[col]]
         
-        # Color Logic (Status is Visual Column 5 / Internal Index 4)
-        if role == Qt.ItemDataRole.ForegroundRole and col == 5:
-            status = self._data[row][4]
+        if role == Qt.ItemDataRole.ForegroundRole and col == self.status_col:
+            status = self._data[row][5] # Status is always internal index 5
             if status == "Done": return QBrush(QColor("#40ed68"))       # Green
             if status == "Failed": return QBrush(QColor("#f7768e"))     # Pink/Red
             if status == "Processing": return QBrush(QColor("#7aa2f7")) # Blue
@@ -48,20 +64,17 @@ class BulkQueueModel(QAbstractTableModel):
         return None
 
     def sort(self, column, order):
-        """
-        Called by QTableView when a header is clicked.
-        """
         if column == 0:
             return
         
-        internal_idx = column - 1
-        self.layoutAboutToBeChanged.emit()
+        internal_idx = self.visual_to_internal.get(column)
+        if internal_idx is None:
+            return
 
+        self.layoutAboutToBeChanged.emit()
         reverse = (order == Qt.SortOrder.DescendingOrder)
 
-        # --- Helper Functions ---
         def status_priority(val):
-            # Done > Failed > Filtered > Queued > Processing
             if val == "Done": return 0
             if val == "Failed": return 1
             if val == "Filtered": return 2
@@ -77,10 +90,10 @@ class BulkQueueModel(QAbstractTableModel):
         def sort_key(row_data):
             val = row_data[internal_idx]
             
-            if internal_idx == 4: 
+            if internal_idx == 5: # Status
                 return status_priority(val)
             
-            if internal_idx == 5:
+            if internal_idx == 6: # Result
                 s_val = str(val)
                 if "%" in s_val:
                     return (0, percentage_value(s_val))
@@ -89,25 +102,26 @@ class BulkQueueModel(QAbstractTableModel):
             return str(val).lower()
 
         self._data.sort(key=sort_key, reverse=reverse)
-
         self.layoutChanged.emit()
 
     def add_item(self, serial, model="Unknown", customer=""):
         self.beginInsertRows(QModelIndex(), len(self._data), len(self._data))
-        self._data.append([serial, model, customer, "", "Queued", ""])
+        # Add 7 elements: [Serial, Model, Customer, Unpack, Custom08, Status, Result]
+        self._data.append([serial, model, customer, "", "", "Queued", ""])
         self.endInsertRows()
 
-    def update_status(self, serial, status, result, model=None, unpack_date=None, customer=None):
+    def update_status(self, serial, status, result, model=None, unpack_date=None, customer=None, custom08_val=None):
         for i, row in enumerate(self._data):
             if row[0] == serial:
-                row[4] = status
-                row[5] = result
+                row[5] = status
+                row[6] = result
                 
                 if model and model != "Unknown": row[1] = model
                 if customer: row[2] = customer
                 if unpack_date: row[3] = unpack_date
+                if custom08_val is not None: row[4] = custom08_val
 
-                self.dataChanged.emit(self.index(i, 1), self.index(i, 6))
+                self.dataChanged.emit(self.index(i, 1), self.index(i, self.columnCount() - 1))
                 return
     
     def get_serial_at(self, row):
@@ -121,5 +135,4 @@ class BulkQueueModel(QAbstractTableModel):
         self.endResetModel()
 
     def sort_by_status(self):
-        # Sort by Status column (Visual Col 5 / Internal 4), Ascending
-        self.sort(5, Qt.SortOrder.AscendingOrder)
+        self.sort(self.status_col, Qt.SortOrder.AscendingOrder)

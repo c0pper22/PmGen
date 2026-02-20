@@ -84,19 +84,16 @@ class BulkSortFilterProxyModel(QSortFilterProxyModel):
         return (p in serial) or (p in model_name) or (p in customer)
 
     def lessThan(self, left: QModelIndex, right: QModelIndex):
-        """
-        Replicates the custom sorting logic from BulkQueueModel 
-        so header clicks work correctly on the Proxy.
-        """
         left_data = self.sourceModel().data(left)
         right_data = self.sourceModel().data(right)
         
         col = left.column()
+        status_col = self.sourceModel().status_col
+        result_col = self.sourceModel().result_col
         
-        # --- Sorting Logic for Status (Visual Column 5) ---
-        if col == 5:
+        # --- Sorting Logic for Status ---
+        if col == status_col:
             def status_priority(val):
-                # Done > Failed > Filtered > Queued > Processing
                 if val == "Done": return 0
                 if val == "Failed": return 1
                 if val == "Filtered": return 2
@@ -200,7 +197,7 @@ class BulkRunTab(QWidget):
         self.view = QTableView()
         
         # Create base model
-        self.model = BulkQueueModel()
+        self.model = BulkQueueModel(custom_col_name=self.config.custom_08_name)
         
         # Create Proxy Model for Sorting/Filtering
         self.proxy_model = BulkSortFilterProxyModel(self)
@@ -319,20 +316,20 @@ class BulkRunTab(QWidget):
         self.progress_bar.setMaximum(total)
         self.progress_bar.setValue(current)
 
-    @pyqtSlot(str, str, str, str, str)
-    def _on_item_updated(self, serial, status, result, model, unpack_date):
+    @pyqtSlot(str, str, str, str, str, str)
+    def _on_item_updated(self, serial, status, result, model, unpack_date, custom08_val):
         c_name = self.customer_map.get(serial, "")
         found = False
         for r in range(self.model.rowCount()):
             if self.model.get_serial_at(r) == serial:
-                self.model.update_status(serial, status, result, model, unpack_date, customer=c_name)
+                self.model.update_status(serial, status, result, model, unpack_date, customer=c_name, custom08_val=custom08_val)
                 found = True
                 break
         
         if not found:
             self.model.add_item(serial, model, customer=c_name)
-            self.model.update_status(serial, status, result, model, unpack_date, customer=c_name)
-
+            self.model.update_status(serial, status, result, model, unpack_date, customer=c_name, custom08_val=custom08_val)
+            
     @pyqtSlot(str)
     def _on_finished(self, msg):
         self._log(msg)
@@ -341,7 +338,7 @@ class BulkRunTab(QWidget):
         
         # We sort the proxy model now, not the source, to update the view
         # Sort by Status (Col 5), Ascending
-        self.view.sortByColumn(5, Qt.SortOrder.AscendingOrder)
+        self.view.sortByColumn(self.model.status_col, Qt.SortOrder.AscendingOrder)
         
         self.btn_stop.setEnabled(False)
         self.finished.emit()
@@ -542,7 +539,12 @@ class MainWindow(QMainWindow):
         pool  = int(s.value(BULK_POOL_KEY, 4, int))
         bl_raw = s.value(BULK_BLACKLIST_KEY, "", str) or ""
         bl = [line.strip().upper() for line in re.split(r"[,\n]+", bl_raw) if line.strip()]
-        return BulkConfig(top_n=max(1, min(9999, top_n)), out_dir=out, pool_size=max(1, min(16, pool)), blacklist=bl)
+        
+        c_name = s.value("bulk/custom_08_name", "", str)
+        try: c_code = int(s.value("bulk/custom_08_code", 0, int))
+        except: c_code = 0
+        
+        return BulkConfig(top_n=max(1, min(9999, top_n)), out_dir=out, pool_size=max(1, min(16, pool)), blacklist=bl, custom_08_name=c_name, custom_08_code=c_code)
 
     def _save_bulk_config(self, cfg: BulkConfig):
         s = QSettings()
@@ -550,6 +552,8 @@ class MainWindow(QMainWindow):
         s.setValue(BULK_DIR_KEY, cfg.out_dir or "")
         s.setValue(BULK_POOL_KEY, int(cfg.pool_size))
         s.setValue(BULK_BLACKLIST_KEY, "\n".join(cfg.blacklist or []))
+        s.setValue("bulk/custom_08_name", cfg.custom_08_name)
+        s.setValue("bulk/custom_08_code", cfg.custom_08_code)
 
     def _get_show_all(self) -> bool:
         return bool(QSettings().value(self.SHOW_ALL_KEY, False, bool))
@@ -1003,9 +1007,20 @@ class MainWindow(QMainWindow):
         sp_min_age.setValue(int(s.value("bulk/unpack_min_months", 0, int)))
 
         btn_save = QPushButton("Save", dlg)
+
+        # --- Custom 08 Filters ---
+        cb_cust_name = QLineEdit(cfg.custom_08_name, dlg); cb_cust_name.setObjectName("DialogInput")
+        cb_cust_name.setPlaceholderText("Column Name (e.g. Total Pages)")
+        sp_cust_code = QSpinBox(dlg); sp_cust_code.setObjectName("DialogInput")
+        sp_cust_code.setRange(0, 999999); sp_cust_code.setValue(cfg.custom_08_code)
+
         def _save():
             bl = [l.strip().upper() for l in re.split(r"[\n,]+", bl_edit.toPlainText()) if l.strip()]
-            self._save_bulk_config(BulkConfig(sp_top.value(), ed_dir.text().strip(), sp_pool.value(), bl))
+            self._save_bulk_config(BulkConfig(
+                top_n=sp_top.value(), out_dir=ed_dir.text().strip(), 
+                pool_size=sp_pool.value(), blacklist=bl,
+                custom_08_name=cb_cust_name.text().strip(), custom_08_code=sp_cust_code.value()
+            ))
             
             # Save Max Age (Existing keys)
             s.setValue("bulk/unpack_filter_enabled", cb_max_age.isChecked())
@@ -1016,6 +1031,7 @@ class MainWindow(QMainWindow):
             s.setValue("bulk/unpack_min_months", sp_min_age.value())
             
             dlg.accept()
+
         btn_save.clicked.connect(_save)
 
         l = dlg._content_layout
@@ -1031,6 +1047,13 @@ class MainWindow(QMainWindow):
         r_max = QHBoxLayout(); r_max.addWidget(cb_max_age); r_max.addStretch(1); r_max.addWidget(sp_max_age); l.addLayout(r_max)
         
         r_btn = QHBoxLayout(); r_btn.addStretch(1); r_btn.addWidget(btn_save); l.addLayout(r_btn)
+
+        l.addWidget(QLabel("Custom 08 Tracking:", dlg))
+        l.addLayout(_row("      Column Name:", cb_cust_name))
+        l.addLayout(_row("      08 Code (0 = Disabled):", sp_cust_code))
+        
+        r_btn = QHBoxLayout(); r_btn.addStretch(1); r_btn.addWidget(btn_save); l.addLayout(r_btn)
+
         dlg.exec()
 
     def _show_about(self):

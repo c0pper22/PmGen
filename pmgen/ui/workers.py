@@ -4,7 +4,7 @@ import traceback
 from fnmatch import fnmatchcase
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from pmgen.io.http_client import get_service_file_bytes, get_unpacking_date
+from pmgen.io.http_client import get_service_file_bytes, _parse_unpacking_date_from_08_bytes, _parse_code_from_08_bytes, get_unpacking_date
 from pmgen.engine.single_report import generate_from_bytes
 from datetime import datetime, date
 import calendar
@@ -57,6 +57,8 @@ class BulkConfig:
     pool_size: int = 4
     blacklist: list[str] = None
     show_all: bool = False
+    custom_08_name: str = ""
+    custom_08_code: int = 0
 
     def __post_init__(self):
         if self.blacklist is None: self.blacklist = []
@@ -65,7 +67,7 @@ class BulkRunner(QObject):
     progress = pyqtSignal(str)
     progress_value = pyqtSignal(int, int)
     finished = pyqtSignal(str)
-    item_updated = pyqtSignal(str, str, str, str, str)
+    item_updated = pyqtSignal(str, str, str, str, str, str)
 
     def __init__(self, cfg: BulkConfig, threshold: float, life_basis: str,
                  threshold_enabled: bool = True,
@@ -175,7 +177,7 @@ class BulkRunner(QObject):
             serials_to_process = [s for s in serials0 if not self._is_blacklisted(s)]
 
             for s in serials_to_process:
-                self.item_updated.emit(s, "Queued", "", "Unknown", "")
+                self.item_updated.emit(s, "Queued", "", "Unknown", "", "")
 
             if QThread.currentThread().isInterruptionRequested():
                 self.finished.emit("[Info] Stopped.")
@@ -196,7 +198,7 @@ class BulkRunner(QObject):
 
             # --- WORKER FUNCTION ---
             def work(serial: str):
-                self.item_updated.emit(serial, "Processing", "...", "", "")
+                self.item_updated.emit(serial, "Processing", "...", "", "", "")
                 
                 cust_name = self.customer_map.get(serial, "")
 
@@ -204,7 +206,18 @@ class BulkRunner(QObject):
                     # A. Fetch Data
                     with pool.acquire() as sess:
                         blob = get_service_file_bytes(serial, "PMSupport", sess=sess)
-                        unpack_date = get_unpacking_date(serial, sess=sess)
+
+                        unpack_date = None
+                        custom08_val = ""
+                        try:
+                            blob_08 = get_service_file_bytes(serial, "08", sess=sess)
+                            unpack_date = _parse_unpacking_date_from_08_bytes(blob_08)
+                            if self.cfg.custom_08_code > 0:
+                                custom08_val = _parse_code_from_08_bytes(self.cfg.custom_08_code, blob_08)
+                                if not custom08_val:
+                                    custom08_val = "N/A"
+                        except Exception:
+                            pass
 
                     # B. Parse & Calculate
                     report = parse_pm_report(blob)
@@ -225,7 +238,7 @@ class BulkRunner(QObject):
                     if filter_reason:
                         # FILTERED: Update UI with percentage, but mark as filtered.
                         # We do NOT generate the individual PDF report.
-                        self.item_updated.emit(serial, "Filtered", pct_str, model_name, d_str)
+                        self.item_updated.emit(serial, "Filtered", pct_str, model_name, d_str, custom08_val)
                         
                         return {
                             "serial": serial,
@@ -242,7 +255,7 @@ class BulkRunner(QObject):
                             customer_name=cust_name
                         )
 
-                        self.item_updated.emit(serial, "Done", pct_str, model_name, d_str)
+                        self.item_updated.emit(serial, "Done", pct_str, model_name, d_str, custom08_val)
 
                         return {
                             "serial": (report.headers or {}).get("serial") or serial,
@@ -259,7 +272,7 @@ class BulkRunner(QObject):
                         }
 
                 except Exception as e:
-                    self.item_updated.emit(serial, "Failed", str(e), "", "")
+                    self.item_updated.emit(serial, "Failed", str(e), "", "", "")
                     return {"serial": serial, "error": str(e), "trace": traceback.format_exc()}
 
             # --- EXECUTION LOOP ---
