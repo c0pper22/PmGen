@@ -260,8 +260,8 @@ def format_report(
     lines.append("─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────")
     lines.extend(most_due_rows if most_due_rows else ["(none)", ""])
     
-    # lines.append("")
-    # lines.extend(final_lines)
+    lines.append("")
+    lines.extend(final_lines)
 
     # if inv_lines: lines.extend(inv_lines)
     # if miss_lines: lines.extend(miss_lines)
