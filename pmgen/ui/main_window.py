@@ -74,7 +74,6 @@ class BulkSortFilterProxyModel(QSortFilterProxyModel):
             idx = model.index(source_row, col_idx, source_parent)
             return str(model.data(idx) or "").lower()
 
-        # Check against Serial, Model, and Customer columns
         # Visual Mapping: 1=Serial, 2=Model, 3=Customer
         serial = get_col_str(1)
         model_name = get_col_str(2)
@@ -101,19 +100,35 @@ class BulkSortFilterProxyModel(QSortFilterProxyModel):
                 return 4
             return status_priority(left_data) < status_priority(right_data)
             
-        if col == 6:
+        # --- Sorting Logic for Result (Percentages) ---
+        if col == result_col:
             def get_val(val):
-                s_val = str(val)
+                s_val = str(val).strip()
                 if "%" in s_val:
-                    try: return float(s_val.replace('%', ''))
-                    except: return -1.0
-                return s_val.lower() # Fallback
+                    try: 
+                        return float(s_val.replace('%', ''))
+                    except ValueError: 
+                        return -1.0
+                
+                if not s_val or s_val in ["—", "..."]:
+                    return -2.0
+                    
+                return s_val.lower()
             
             l_v = get_val(left_data)
             r_v = get_val(right_data)
             
+            # If both are floats (percentages or blanks mapped to negative numbers)
             if isinstance(l_v, float) and isinstance(r_v, float):
                 return l_v < r_v
+            
+            # If one is a float and one is text, sort the string as "greater" so it falls to the bottom
+            if isinstance(l_v, float) and isinstance(r_v, str):
+                return True
+            if isinstance(l_v, str) and isinstance(r_v, float):
+                return False
+
+            # Default fallback
             return str(l_v) < str(r_v)
 
         # --- Default String Sort ---
@@ -155,7 +170,7 @@ class BulkRunTab(QWidget):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(6)
 
-        # --- Top Bar: Status, Progress, Search, Stop ---
+        # --- Top Bar: Status, Progress, Search, Export, Stop ---
         top_bar = QHBoxLayout()
         
         self.status_label = QLabel("Ready")
@@ -176,6 +191,12 @@ class BulkRunTab(QWidget):
         self.search_bar.setFixedWidth(200)
         self.search_bar.textChanged.connect(self._on_search_changed)
 
+        # Export Button
+        self.btn_export = QPushButton("Export")
+        self.btn_export.setObjectName("BulkExportBtn")
+        self.btn_export.setFixedHeight(24)
+        self.btn_export.clicked.connect(self._export_to_excel)
+
         # Stop Button
         self.btn_stop = QPushButton("Stop")
         self.btn_stop.setObjectName("BulkStopBtn")
@@ -185,7 +206,8 @@ class BulkRunTab(QWidget):
 
         top_bar.addWidget(self.status_label)
         top_bar.addWidget(self.progress_bar, 1)
-        top_bar.addWidget(self.search_bar) # Add Search Here
+        top_bar.addWidget(self.search_bar) 
+        top_bar.addWidget(self.btn_export) # Add Export Here
         top_bar.addWidget(self.btn_stop)
 
         layout.addLayout(top_bar)
@@ -270,9 +292,6 @@ class BulkRunTab(QWidget):
 
     def _on_search_changed(self, text):
         """Updates the proxy filter regex when search bar text changes."""
-        # Use regex to escape special characters if you want exact matching, 
-        # or simple string if you want wildcards. 
-        # Here we just pass the text; QRegularExpression handles it cleanly.
         regex = QRegularExpression(re.escape(text), QRegularExpression.PatternOption.CaseInsensitiveOption)
         self.proxy_model.setFilterRegularExpression(regex)
 
@@ -299,8 +318,61 @@ class BulkRunTab(QWidget):
         if self.config.out_dir and os.path.exists(self.config.out_dir):
             os.startfile(self.config.out_dir)
 
-    # --- Worker Slots ---
+    def _export_to_excel(self):
+        """Exports the current view (respecting filters/sorting) to an Excel file."""
+        import pandas as pd
+        
+        if self.proxy_model.rowCount() == 0:
+            self._log("[Info] Table is empty, nothing to export.")
+            return
 
+        # Prompt the user for where to save the file
+        file_path, filter_used = QFileDialog.getSaveFileName(
+            self, 
+            "Export Table", 
+            os.path.join(self.config.out_dir, "Bulk_Report_Export.xlsx"), 
+            "Excel Files (*.xlsx);;CSV Files (*.csv)"
+        )
+
+        if not file_path:
+            return  # User canceled
+
+        self._log(f"[Info] Exporting table to {file_path}...")
+
+        try:
+            # 1. Grab headers dynamically
+            headers = [
+                self.model.headerData(i, Qt.Orientation.Horizontal, Qt.ItemDataRole.DisplayRole)
+                for i in range(self.proxy_model.columnCount())
+            ]
+
+            # 2. Iterate over the proxy model (this guarantees we capture the exact current state of the UI)
+            data = []
+            for row in range(self.proxy_model.rowCount()):
+                row_data = []
+                for col in range(self.proxy_model.columnCount()):
+                    idx = self.proxy_model.index(row, col)
+                    val = self.proxy_model.data(idx, Qt.ItemDataRole.DisplayRole)
+                    row_data.append(val)
+                data.append(row_data)
+
+            # 3. Create DataFrame and export
+            df = pd.DataFrame(data, columns=headers)
+            
+            if file_path.endswith('.csv'):
+                df.to_csv(file_path, index=False)
+            else:
+                # Engine 'openpyxl' is required for .xlsx
+                df.to_excel(file_path, index=False, engine='openpyxl')
+            
+            self._log(f"[Success] Export complete: {file_path}")
+            
+        except ImportError:
+            self._log("[Error] Export failed: Please ensure 'pandas' and 'openpyxl' are installed (pip install pandas openpyxl).")
+        except Exception as e:
+            self._log(f"[Error] Failed to export table: {str(e)}")
+
+    # --- Worker Slots ---
     @pyqtSlot(str)
     def _on_progress_text(self, text):
         self._log(text)
@@ -336,8 +408,6 @@ class BulkRunTab(QWidget):
         self.status_label.setText("Done")
         self.progress_bar.setValue(self.progress_bar.maximum())
         
-        # We sort the proxy model now, not the source, to update the view
-        # Sort by Status (Col 5), Ascending
         self.view.sortByColumn(self.model.status_col, Qt.SortOrder.AscendingOrder)
         
         self.btn_stop.setEnabled(False)

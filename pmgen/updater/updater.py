@@ -14,7 +14,7 @@ from PyQt6.QtCore import QObject, pyqtSignal
 # --- CONFIGURATION ---
 GITHUB_REPO = "c0pper22/PmGen"
 ASSET_NAME = "PmGen.zip"
-CURRENT_VERSION = "2.8.5"
+CURRENT_VERSION = "2.8.6"
 USER_AGENT = f"PmGen-Updater/{CURRENT_VERSION}"
 UPDATER_EXE_NAME = "updater.exe"
 
