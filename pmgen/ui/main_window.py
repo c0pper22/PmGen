@@ -616,7 +616,15 @@ class MainWindow(QMainWindow):
         
         gen_pdfs = bool(s.value("bulk/generate_pdfs", True, bool))
 
-        return BulkConfig(top_n=max(1, min(9999, top_n)), out_dir=out, pool_size=max(1, min(16, pool)), blacklist=bl, custom_08_name=c_name, custom_08_code=c_code)
+        return BulkConfig(
+            top_n=max(1, min(9999, top_n)), 
+            out_dir=out, 
+            pool_size=max(1, min(16, pool)), 
+            blacklist=bl, 
+            custom_08_name=c_name, 
+            custom_08_code=c_code,
+            generate_pdfs=gen_pdfs
+        )
 
     def _save_bulk_config(self, cfg: BulkConfig):
         s = QSettings()
@@ -1101,8 +1109,10 @@ class MainWindow(QMainWindow):
             self._save_bulk_config(BulkConfig(
                 top_n=sp_top.value(), out_dir=ed_dir.text().strip(), 
                 pool_size=sp_pool.value(), blacklist=bl,
-                custom_08_name=cb_cust_name.text().strip(), custom_08_code=sp_cust_code.value()
+                custom_08_name=cb_cust_name.text().strip(), custom_08_code=sp_cust_code.value(),
+                generate_pdfs=cb_gen_pdfs.isChecked()
             ))
+            
             
             # Save Max Age (Existing keys)
             s.setValue("bulk/unpack_filter_enabled", cb_max_age.isChecked())
