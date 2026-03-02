@@ -614,6 +614,8 @@ class MainWindow(QMainWindow):
         try: c_code = int(s.value("bulk/custom_08_code", 0, int))
         except: c_code = 0
         
+        gen_pdfs = bool(s.value("bulk/generate_pdfs", True, bool))
+
         return BulkConfig(top_n=max(1, min(9999, top_n)), out_dir=out, pool_size=max(1, min(16, pool)), blacklist=bl, custom_08_name=c_name, custom_08_code=c_code)
 
     def _save_bulk_config(self, cfg: BulkConfig):
@@ -624,6 +626,7 @@ class MainWindow(QMainWindow):
         s.setValue(BULK_BLACKLIST_KEY, "\n".join(cfg.blacklist or []))
         s.setValue("bulk/custom_08_name", cfg.custom_08_name)
         s.setValue("bulk/custom_08_code", cfg.custom_08_code)
+        s.setValue("bulk/generate_pdfs", bool(cfg.generate_pdfs))
 
     def _get_show_all(self) -> bool:
         return bool(QSettings().value(self.SHOW_ALL_KEY, False, bool))
@@ -1056,9 +1059,18 @@ class MainWindow(QMainWindow):
         # --- Standard Config ---
         sp_top = QSpinBox(dlg); sp_top.setObjectName("DialogInput"); sp_top.setRange(1, 9999); sp_top.setValue(cfg.top_n)
         sp_pool = QSpinBox(dlg); sp_pool.setObjectName("DialogInput"); sp_pool.setRange(1, 16); sp_pool.setValue(cfg.pool_size)
+        cb_gen_pdfs = QCheckBox("Generate PDF Reports", dlg)
+        cb_gen_pdfs.setObjectName("DialogCheckbox")
+        cb_gen_pdfs.setChecked(cfg.generate_pdfs)
         ed_dir = QLineEdit(cfg.out_dir, dlg); ed_dir.setObjectName("DialogInput")
         btn_br = QPushButton("Browse", dlg); btn_br.clicked.connect(lambda: ed_dir.setText(QFileDialog.getExistingDirectory(self, "Out", cfg.out_dir) or cfg.out_dir))
         
+        def toggle_out_dir(checked):
+            ed_dir.setEnabled(checked)
+            btn_br.setEnabled(checked)
+        cb_gen_pdfs.toggled.connect(toggle_out_dir)
+        toggle_out_dir(cfg.generate_pdfs)
+
         bl_edit = QPlainTextEdit(dlg); bl_edit.setObjectName("MainEditor"); bl_edit.setFixedHeight(60)
         bl_edit.setPlainText("\n".join(cfg.blacklist or []))
         
@@ -1108,6 +1120,8 @@ class MainWindow(QMainWindow):
         l.addLayout(_row("Top N serials:", sp_top))
         l.addLayout(_row("Parallel workers:", sp_pool))
         
+        l.addWidget(cb_gen_pdfs)
+
         r_dir = QHBoxLayout(); r_dir.addWidget(QLabel("Out Dir:", dlg)); r_dir.addWidget(ed_dir, 1); r_dir.addWidget(btn_br); l.addLayout(r_dir)
         
         l.addWidget(QLabel("Blacklist:", dlg)); l.addWidget(bl_edit)

@@ -1,6 +1,5 @@
 from __future__ import annotations
 from pmgen.rules.base import Context, RuleBase
-from pmgen.ui.inventory import load_inventory_cache
 
 class InventoryCheckRule(RuleBase):
     """
@@ -10,6 +9,8 @@ class InventoryCheckRule(RuleBase):
     name = "InventoryCheckRule"
 
     def apply(self, ctx: Context) -> None:
+        from pmgen.ui.inventory import load_inventory_cache
+        
         # 1. Load data
         df = load_inventory_cache()
         

@@ -59,6 +59,7 @@ class BulkConfig:
     show_all: bool = False
     custom_08_name: str = ""
     custom_08_code: int = 0
+    generate_pdfs: bool = True
 
     def __post_init__(self):
         if self.blacklist is None: self.blacklist = []
@@ -137,18 +138,19 @@ class BulkRunner(QObject):
     def run(self):
         pool = None
         try:
-            if not self.cfg.out_dir or not self.cfg.out_dir.strip():
-                raise ValueError("Output directory is not set.")
+            if self.cfg.generate_pdfs:
+                if not self.cfg.out_dir or not self.cfg.out_dir.strip():
+                    raise ValueError("Output directory is not set.")
 
-            # Create Output Directory
-            date_str = datetime.now().strftime("%Y-%m-%d")
-            base_path = os.path.join(self.cfg.out_dir, date_str)
-            final_out_dir = base_path
-            counter = 1
-            while os.path.exists(final_out_dir):
-                final_out_dir = f"{base_path} ({counter})"
-                counter += 1
-            os.makedirs(final_out_dir, exist_ok=True)
+                # Create Output Directory
+                date_str = datetime.now().strftime("%Y-%m-%d")
+                base_path = os.path.join(self.cfg.out_dir, date_str)
+                final_out_dir = base_path
+                counter = 1
+                while os.path.exists(final_out_dir):
+                    final_out_dir = f"{base_path} ({counter})"
+                    counter += 1
+                os.makedirs(final_out_dir, exist_ok=True)
 
             from pmgen.io.http_client import SessionPool, get_serials_after_login, get_service_file_bytes, get_unpacking_date
             from pmgen.parsing.parse_pm_report import parse_pm_report
@@ -247,13 +249,13 @@ class BulkRunner(QObject):
                             "best_used": float(best_used) # Return value so we can sort if needed
                         }
                     else:
-                        # DONE: Generate PDF and mark as Done.
-                        create_pdf_report(
-                            report=report, selection=selection, threshold=thr, life_basis=basis,
-                            show_all=show_all, out_dir=final_out_dir, threshold_enabled=thr_enabled,
-                            unpacking_date=unpack_date,
-                            customer_name=cust_name
-                        )
+                        if self.cfg.generate_pdfs:
+                            create_pdf_report(
+                                report=report, selection=selection, threshold=thr, life_basis=basis,
+                                show_all=show_all, out_dir=final_out_dir, threshold_enabled=thr_enabled,
+                                unpacking_date=unpack_date,
+                                customer_name=cust_name
+                            )
 
                         self.item_updated.emit(serial, "Done", pct_str, model_name, d_str, custom08_val)
 
@@ -321,15 +323,18 @@ class BulkRunner(QObject):
             top = ok[: self.cfg.top_n]
 
             if len(top) > 0:
-                self.progress.emit(f"[Info] Wrote {len(top)} report files to: {final_out_dir}")
-                try:
-                    pdf_path = write_final_summary_pdf(
-                        out_dir=final_out_dir, results=results, top=top, thr=thr, basis=basis,
-                        filename="Final_Summary.pdf", threshold_enabled=thr_enabled
-                    )
-                    self.finished.emit(f"[Info] Complete. Summary written to: {pdf_path}")
-                except Exception as e:
-                    self.finished.emit(f"[Info] Reports generated, but Summary PDF failed: {e}")
+                if self.cfg.generate_pdfs:
+                    self.progress.emit(f"[Info] Wrote {len(top)} report files to: {final_out_dir}")
+                    try:
+                        pdf_path = write_final_summary_pdf(
+                            out_dir=final_out_dir, results=results, top=top, thr=thr, basis=basis,
+                            filename="Final_Summary.pdf", threshold_enabled=thr_enabled
+                        )
+                        self.finished.emit(f"[Info] Complete. Summary written to: {pdf_path}")
+                    except Exception as e:
+                        self.finished.emit(f"[Info] Reports generated, but Summary PDF failed: {e}")
+                else:
+                    self.finished.emit("[Info] Complete. Table populated (PDF generation disabled).")
             else:
                 self.finished.emit("[Info] Complete (No valid reports generated).")
 

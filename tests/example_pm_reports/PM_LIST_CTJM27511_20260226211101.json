@@ -1,0 +1,10 @@
+﻿{
+    "config": {
+        "threshold": 0.95,
+        "life_basis": "page",
+        "threshold_enabled": true
+    },
+    "expected_parts": {
+
+    }
+}
