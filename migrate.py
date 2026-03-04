@@ -92,6 +92,14 @@ def migrate_data():
         )
 
     # --- Seed Per-Color Unit Semantics (if missing) ---
+    # ─────────────────────────────────────────────────────────────────────────────
+    # All PmUnit names listed here are treated as *per-color kits* by the rules engine.
+    # That means each kit will count **once per color channel (K/C/M/Y)**, regardless
+    # of how many color-tagged canons inside it are due (e.g., DRUM[K], GRID[K], etc.).
+    # 
+    # This prevents double-counting within multi-part developer/drum units such as
+    # EPU-FC330-K or EPU-KIT-FC556-G, which include several related K-channel canons.
+    # ─────────────────────────────────────────────────────────────────────────────
     per_color_units = [
         "EPU-KIT-FC556-G",
         "EPU-FC330-K",
