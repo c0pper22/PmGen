@@ -10,7 +10,7 @@ project_root = Path('.').resolve()
 reportlab_datas = collect_data_files("reportlab")
 certifi_datas, certifi_bins, certifi_hidden = collect_all('certifi')
 
-datas = certifi_datas + reportlab_datas + [('catalog_manager.db', '.')]
+datas = certifi_datas + reportlab_datas + [('catalog_manager.db', '.'), ('pmgen.ico', '.')]
 
 icons_tree = Tree(
     str(project_root / "pmgen" / "assets" / "icons"),
@@ -81,7 +81,7 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    icon=('pmgen.ico' if Path('pmgen.ico').exists() else None),
+    icon='pmgen.ico',
 )
 
 # --- 2. Analysis for Updater (ONEFILE) ---

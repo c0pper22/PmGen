@@ -1,13 +1,13 @@
 from __future__ import annotations
+import ctypes
 import sys
 import shutil
 import os
 import logging
 from pmgen.io.http_client import get_db_path
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication 
 from PyQt6.QtCore import QCoreApplication
-
-# --- NEW IMPORTS ---
+from PyQt6.QtGui import QIcon
 from pmgen.system.diagnostics import setup_logging, install_crash_handlers
 
 os.environ.setdefault("QT_AUTO_SCREEN_SCALE_FACTOR", "1")
@@ -45,7 +45,6 @@ def bootstrap_database():
         except Exception as e:
             logging.error(f"Error copying database: {e}") 
     else:
-        # Only log critical if we really needed to copy it but couldn't find the source
         logging.critical(f"Master database not found at {os.path.abspath(source_path)}")
 
 def main() -> int:
@@ -54,11 +53,27 @@ def main() -> int:
 
     """PmGen GUI entry point."""
     try:
+        if sys.platform == 'win32':
+            myappid = 'pmgen.indybiz.application.v2'
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+
         app = QApplication(sys.argv)
         QCoreApplication.setOrganizationName("PmGen")
         QCoreApplication.setOrganizationDomain("pmgen.local")
         QCoreApplication.setApplicationName("PmGen 2.0")
         
+        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+            base_dir = sys._MEIPASS
+        elif getattr(sys, 'frozen', False):
+            base_dir = os.path.dirname(sys.executable)
+        else:
+            base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
+        icon_path = os.path.join(base_dir, "pmgen.ico")
+        
+        if os.path.exists(icon_path):
+            app.setWindowIcon(QIcon(icon_path))
+
         bootstrap_database()
         
         from pmgen.ui.main_window import MainWindow, apply_static_theme

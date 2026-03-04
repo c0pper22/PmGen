@@ -16,7 +16,6 @@ class BulkQueueModel(QAbstractTableModel):
         # [Serial(0), Model(1), Customer(2), UnpackDate(3), Custom08(4), Status(5), Result(6)]
         self._data = []
 
-        # Map Visual Column Index to Internal Data Index
         self.visual_to_internal = { 1: 0, 2: 1, 3: 2, 4: 3 }
         
         if self.has_custom:

@@ -50,27 +50,20 @@ def migrate_data():
                     (pattern_obj.pattern, template))
     
     # --- Migrate Models and Kits ---
-    # We do NOT use 'seen_units' to block item insertion anymore.
-    # Instead, we insert items intelligently.
-
     for model_name, model_obj in REGISTRY.items():
         cur.execute("INSERT OR IGNORE INTO models (model_name) VALUES (?)", (model_name,))
         
-        # Access the catalog inside the Model object
         catalog = getattr(model_obj, "catalog", None)
         if catalog and hasattr(catalog, "pm_units"):
             for unit in catalog.pm_units:
-                # 1. Ensure Unit Name exists (Idempotent)
                 cur.execute("INSERT OR IGNORE INTO pm_units (unit_name) VALUES (?)", (unit.unit_name,))
                 
-                # 2. Insert Items (Check if exists first to avoid duplicates)
                 for item in unit.canon_items:
                     cur.execute("SELECT 1 FROM unit_items WHERE unit_name=? AND canon_item=?", (unit.unit_name, item))
                     if not cur.fetchone():
                         cur.execute("INSERT INTO unit_items (unit_name, canon_item) VALUES (?, ?)", 
                                     (unit.unit_name, item))
                 
-                # 3. Link Model to Unit
                 cur.execute("INSERT OR IGNORE INTO model_catalog (model_name, unit_name) VALUES (?, ?)", 
                             (model_name, unit.unit_name))
     

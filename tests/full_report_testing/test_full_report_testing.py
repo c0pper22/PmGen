@@ -1,8 +1,11 @@
 import os
+import re
 import json
 import pytest
 import shutil
 from PyQt6.QtCore import QStandardPaths, QCoreApplication
+from pmgen.engine.single_report import generate_from_bytes
+from pmgen.engine.final_report import write_final_summary_pdf
 
 @pytest.fixture(autouse=True)
 def setup_test_db(qtbot):
@@ -102,3 +105,79 @@ def test_full_pm_report_generation(csv_path, json_path):
     )
 
     assert actual_parts == expected_parts, debug_msg
+
+def _load_case(csv_path, json_path):
+    with open(json_path, "r", encoding="utf-8-sig") as f:
+        test_data = json.load(f)
+
+    config = test_data.get("config", {})
+    with open(csv_path, "rb") as f:
+        csv_bytes = f.read()
+
+    return config, csv_bytes
+
+
+@pytest.mark.parametrize("csv_path, json_path", get_test_cases())
+def test_run_rules_meta_contract_regression(csv_path, json_path):
+    """
+    Regression guard: run_rules should always return Selection.meta
+    with the expected core keys used by UI/reporting layers.
+    """
+    config, csv_bytes = _load_case(csv_path, json_path)
+    report = parse_pm_report(csv_bytes)
+
+    selection = run_rules(
+        report=report,
+        threshold=config.get("threshold", 0.8),
+        life_basis=config.get("life_basis", "page"),
+        threshold_enabled=config.get("threshold_enabled", True),
+    )
+
+    meta = getattr(selection, "meta", {}) or {}
+    for key in ("watch", "all_items", "alerts"):
+        assert key in meta, f"Missing meta key: {key}"
+
+    assert isinstance(meta["alerts"], list)
+    assert isinstance(meta["all_items"], list)
+    assert isinstance(getattr(selection, "items", []), list)
+
+
+@pytest.mark.parametrize("csv_path, json_path", get_test_cases())
+def test_generate_from_bytes_report_sections_regression(csv_path, json_path):
+    """
+    Regression guard: text report should keep core sections/labels expected by UI highlighter.
+    """
+    config, csv_bytes = _load_case(csv_path, json_path)
+
+    text = generate_from_bytes(
+        pm_pdf_bytes=csv_bytes,
+        threshold=config.get("threshold", 0.8),
+        life_basis=config.get("life_basis", "page"),
+        show_all=config.get("show_all", False),
+        threshold_enabled=config.get("threshold_enabled", True),
+        unpacking_date=None,
+        alerts_enabled=True,
+        customer_name="",
+    )
+
+    assert "Highest Wear Items" in text
+    assert re.search(r"\bModel:\s*", text), "Missing model header in report text"
+    assert re.search(r"\bSerial:\s*", text), "Missing serial header in report text"
+
+
+def test_write_final_summary_pdf_empty_input_regression(tmp_path):
+    """
+    Regression guard: final summary PDF generation should not crash on empty result sets.
+    """
+    out_path = write_final_summary_pdf(
+        out_dir=str(tmp_path),
+        results=[],
+        top=[],
+        thr=0.8,
+        basis="page",
+        threshold_enabled=True,
+    )
+
+    assert os.path.exists(out_path), "Final summary PDF file was not created"
+    with open(out_path, "rb") as f:
+        assert f.read(4) == b"%PDF", "Generated file is not a valid PDF header"

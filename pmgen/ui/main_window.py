@@ -165,6 +165,39 @@ class BulkRunTab(QWidget):
 
         self._setup_ui()
 
+    def _log_run_settings(self):
+        cfg = self.config
+        rk = self.runner_kwargs or {}
+
+        threshold = rk.get("threshold", 0.0)
+        life_basis = rk.get("life_basis", "page")
+        threshold_enabled = bool(rk.get("threshold_enabled", False))
+
+        unpack_max_enabled = bool(rk.get("unpack_max_enabled", False))
+        unpack_max_months = int(rk.get("unpack_max_months", 0) or 0)
+        unpack_min_enabled = bool(rk.get("unpack_min_enabled", False))
+        unpack_min_months = int(rk.get("unpack_min_months", 0) or 0)
+
+        lines = [
+            "[Info] Bulk job settings:",
+            f"  - top_n: {cfg.top_n}",
+            f"  - pool_size: {cfg.pool_size}",
+            f"  - generate_pdfs: {cfg.generate_pdfs}",
+            f"  - out_dir: {cfg.out_dir or '(not set)'}",
+            f"  - show_all: {cfg.show_all}",
+            f"  - threshold_enabled: {threshold_enabled}",
+            f"  - threshold: {float(threshold) * 100:.1f}%",
+            f"  - life_basis: {str(life_basis).upper()}",
+            f"  - blacklist_count: {len(cfg.blacklist or [])}",
+            f"  - unpack_max_filter: {unpack_max_enabled} ({unpack_max_months} months)",
+            f"  - unpack_min_filter: {unpack_min_enabled} ({unpack_min_months} months)",
+            f"  - custom_08_name: {cfg.custom_08_name or '(disabled)'}",
+            f"  - custom_08_code: {cfg.custom_08_code}",
+            f"  - customer_map_count: {len(self.customer_map or {})}",
+        ]
+        for line in lines:
+            self._log(line)
+
     def _setup_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
@@ -261,6 +294,7 @@ class BulkRunTab(QWidget):
         self.log_editor.clear()
         self.btn_stop.setEnabled(True)
         self.status_label.setText("Initializing...")
+        self._log_run_settings()
         
         # Create Thread & Runner
         self._thread = QThread()
@@ -452,6 +486,9 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
+        icon_path = os.path.join(os.path.dirname(__file__), "icons", "pmgen.ico")
+        self.setWindowIcon(QIcon(icon_path))
+
         self.setWindowTitle("PmGen")
         self.resize(1100, 720)
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
