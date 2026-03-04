@@ -3,12 +3,6 @@ import re
 from typing import Dict, List, Optional, Tuple, Set
 from pmgen.io.db_access import CatalogDB 
 
-try:
-    from pmgen.catalog import part_kit_catalog as cat
-    _PER_COLOR_UNITS: Set[str] = set(getattr(cat, "PER_COLOR_UNIT_NAMES", set()) or set())
-except Exception:
-    _PER_COLOR_UNITS = set()
-
 # ---------------------------
 # Helpers for unit semantics
 # ---------------------------
@@ -40,7 +34,11 @@ def _cassette_slot_id(canon: Optional[str]) -> Optional[str]:
     m = re.search(r"\((?P<slot>(1ST|2ND|3RD|4TH)\s*CST\.?)\)", canon.upper())
     return m.group("slot") if m else None
 
-def _unit_bucket_key(kit_code: str, canon: Optional[str]) -> Tuple[str, Optional[str]]:
+def _unit_bucket_key(
+    kit_code: str,
+    canon: Optional[str],
+    per_color_units: Set[str],
+) -> Tuple[str, Optional[str]]:
     """
     Build the *unit* key used to ensure we count each PmUnit once.
     - Normal units:              (kit_code, None)
@@ -49,7 +47,7 @@ def _unit_bucket_key(kit_code: str, canon: Optional[str]) -> Tuple[str, Optional
     - CST units:                 (kit_code, <tray-slot>)         → per tray (1st/2nd/3rd/4th)
     """
     # 1) Explicit per-color kits (e.g., EPU-KIT-FC556-G)
-    if kit_code in _PER_COLOR_UNITS:
+    if kit_code in per_color_units:
         ch = _canon_channel(canon)
         return (kit_code, ch or "<per-color>")
 
@@ -71,10 +69,22 @@ class UnitGroupingRule(RuleBase):
     Handles 'Drum per color', 'CST per tray', etc.
     """
     name = "UnitGroupingRule"
+    _PER_COLOR_CACHE: Optional[Set[str]] = None
+
+    def _get_per_color_units(self) -> Set[str]:
+        if self._PER_COLOR_CACHE is not None:
+            return self._PER_COLOR_CACHE
+        try:
+            units = CatalogDB().get_per_color_units()
+            self._PER_COLOR_CACHE = set(units)
+        except Exception:
+            self._PER_COLOR_CACHE = set()
+        return self._PER_COLOR_CACHE
 
     def apply(self, ctx: Context) -> None:
         seen_buckets = set()
         selection = {}
+        per_color_units = self._get_per_color_units()
 
         for finding in ctx.findings.values():
             if not finding.due or not getattr(finding, "kit_code", None):
@@ -84,7 +94,7 @@ class UnitGroupingRule(RuleBase):
             canon = finding.canon
 
             # Use your helper logic here (moved from run_rules.py)
-            bucket_key = self._get_bucket_key(kit, canon)
+            bucket_key = self._get_bucket_key(kit, canon, per_color_units)
 
             if bucket_key in seen_buckets:
                 continue
@@ -97,8 +107,8 @@ class UnitGroupingRule(RuleBase):
 
         ctx.kit_selection = selection
 
-    def _get_bucket_key(self, kit, canon):
-        return _unit_bucket_key(kit_code=kit, canon=canon)
+    def _get_bucket_key(self, kit, canon, per_color_units):
+        return _unit_bucket_key(kit_code=kit, canon=canon, per_color_units=per_color_units)
 
     def _apply_db_deduplication(self, selection: Dict[str, int]):
         """

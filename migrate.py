@@ -39,6 +39,19 @@ def init_db(cursor):
         FOREIGN KEY(unit_name) REFERENCES pm_units(unit_name)
     )""")
 
+    # 5. Quantity Overrides
+    cursor.execute("""CREATE TABLE IF NOT EXISTS qty_overrides (
+        unit_name TEXT PRIMARY KEY,
+        quantity INTEGER NOT NULL,
+        FOREIGN KEY(unit_name) REFERENCES pm_units(unit_name)
+    )""")
+
+    # 6. Unit semantics (count once per color channel)
+    cursor.execute("""CREATE TABLE IF NOT EXISTS per_color_units (
+        unit_name TEXT PRIMARY KEY,
+        FOREIGN KEY(unit_name) REFERENCES pm_units(unit_name)
+    )""")
+
 def migrate_data():
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -66,6 +79,31 @@ def migrate_data():
                 
                 cur.execute("INSERT OR IGNORE INTO model_catalog (model_name, unit_name) VALUES (?, ?)", 
                             (model_name, unit.unit_name))
+
+    # --- Seed Quantity Overrides (if missing) ---
+    qty_overrides = [
+        ("FILTER-OZN-KCH-A08K", 2),
+        ("ASYS-ROLL-FEED-SFB-H44X", 2),
+    ]
+    for unit_name, qty in qty_overrides:
+        cur.execute(
+            "INSERT OR IGNORE INTO qty_overrides (unit_name, quantity) VALUES (?, ?)",
+            (unit_name, qty),
+        )
+
+    # --- Seed Per-Color Unit Semantics (if missing) ---
+    per_color_units = [
+        "EPU-KIT-FC556-G",
+        "EPU-FC330-K",
+        "EPU-FC330-Y",
+        "EPU-FC330-M",
+        "EPU-FC330-C",
+    ]
+    for unit_name in per_color_units:
+        cur.execute(
+            "INSERT OR IGNORE INTO per_color_units (unit_name) VALUES (?)",
+            (unit_name,),
+        )
     
     conn.commit()
     print(f"Migration complete! Data saved to {DB_PATH}")

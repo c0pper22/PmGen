@@ -62,6 +62,23 @@ class CatalogDB:
                 template TEXT NOT NULL
             )
         """)
+
+        # 6. Quantity Overrides (kit -> fixed qty)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS qty_overrides (
+                unit_name TEXT PRIMARY KEY,
+                quantity INTEGER NOT NULL,
+                FOREIGN KEY(unit_name) REFERENCES pm_units(unit_name) ON DELETE CASCADE
+            )
+        """)
+
+        # 7. Unit semantics flags
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS per_color_units (
+                unit_name TEXT PRIMARY KEY,
+                FOREIGN KEY(unit_name) REFERENCES pm_units(unit_name) ON DELETE CASCADE
+            )
+        """)
         
         conn.commit()
         conn.close()
@@ -255,6 +272,83 @@ class CatalogDB:
                 cur.execute("UPDATE canon_mappings SET pattern=?, template=? WHERE id=?", (pattern, template, mapping_id))
             except sqlite3.OperationalError:
                 cur.execute("UPDATE canon_mappings SET pattern=?, template=? WHERE rowid=?", (pattern, template, mapping_id))
+            conn.commit()
+        finally:
+            conn.close()
+
+    # =========================================================================
+    #  QTY OVERRIDES
+    # =========================================================================
+
+    def get_qty_overrides(self) -> Dict[str, int]:
+        conn = self._get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT unit_name, quantity FROM qty_overrides")
+            return {row[0]: int(row[1]) for row in cur.fetchall()}
+        finally:
+            conn.close()
+
+    def set_qty_override(self, unit_name: str, quantity: int):
+        if not unit_name or quantity is None:
+            return
+        conn = self._get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO qty_overrides (unit_name, quantity)
+                VALUES (?, ?)
+                ON CONFLICT(unit_name) DO UPDATE SET quantity = excluded.quantity
+                """,
+                (unit_name.strip(), int(quantity)),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def delete_qty_override(self, unit_name: str):
+        if not unit_name:
+            return
+        conn = self._get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM qty_overrides WHERE unit_name = ?", (unit_name.strip(),))
+            conn.commit()
+        finally:
+            conn.close()
+
+    # =========================================================================
+    #  UNIT SEMANTICS (Per-color kit flags)
+    # =========================================================================
+
+    def get_per_color_units(self) -> List[str]:
+        conn = self._get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT unit_name FROM per_color_units ORDER BY unit_name")
+            return [row[0] for row in cur.fetchall()]
+        finally:
+            conn.close()
+
+    def add_per_color_unit(self, unit_name: str):
+        if not unit_name or not unit_name.strip():
+            return
+        conn = self._get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute("INSERT OR IGNORE INTO per_color_units (unit_name) VALUES (?)", (unit_name.strip(),))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def remove_per_color_unit(self, unit_name: str):
+        if not unit_name or not unit_name.strip():
+            return
+        conn = self._get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM per_color_units WHERE unit_name = ?", (unit_name.strip(),))
             conn.commit()
         finally:
             conn.close()

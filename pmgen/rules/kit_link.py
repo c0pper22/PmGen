@@ -1,88 +1,51 @@
 from __future__ import annotations
-from typing import Dict, List, Optional, Set, Iterable
+from typing import Dict, Iterable, Optional
 from pmgen.rules.base import Context, RuleBase
-from pmgen.types import Finding
-import os
+from pmgen.io.db_access import CatalogDB
 
-from pmgen.catalog import part_kit_catalog as catalog_mod
-from pmgen.rules.generic_life import _is_due
 
-def _ensure_catalog_for_model(model: str):
+def _canon_to_kit_map_from_db(model: str) -> Dict[str, str]:
     """
-    Try several conventions to obtain a Catalog for the given model WITHOUT
-    hard-coding any kit codes in the rule layer.
-    Expected options on part_kit_catalog:
-      - get_catalog_for_model(model) -> Catalog
-      - MODEL_MAP: Dict[pattern, Catalog] (regex or substring)
-      - DEFAULT_CATALOG: Catalog
-      - Any top-level variable that *is* a Catalog (last resort)
-    """
-    # 1) First, a helper function if you provide it.
-    get_func = getattr(catalog_mod, "get_catalog_for_model", None)
-    if callable(get_func):
-        cat = get_func(model)
-        if cat:
-            return cat
-
-    # 2) MODEL_MAP (regex/substring keys) -> Catalog
-    model_map = getattr(catalog_mod, "MODEL_MAP", None)
-    if isinstance(model_map, dict) and model:
-        m_up = (model or "").upper()
-        import re
-        for patt, cat in model_map.items():
-            try:
-                if patt and ((patt in m_up) or re.search(patt, m_up, re.I)):
-                    return cat
-            except re.error:
-                # Treat invalid regex as plain substring
-                if patt in m_up:
-                    return cat
-
-    # 3) DEFAULT_CATALOG
-    dc = getattr(catalog_mod, "DEFAULT_CATALOG", None)
-    if dc:
-        return dc
-
-    # 4) Any Catalog instance defined at module level
-    for name, val in vars(catalog_mod).items():
-        if name.isupper() and getattr(val, "__class__", None).__name__ == "Catalog":
-            return val
-
-    return None
-
-
-def _canon_to_kit_map_from_catalog(cat) -> Dict[str, str]:
-    """
-    Build {canon -> kit_code} from the catalog’s PmUnits.
-    - kit_code comes from PmUnit.unit_name
-    - canons come from PmUnit.canon_items (strings)
+    Build {canon -> kit_code} directly from SQLite for the best model match.
     """
     mapping: Dict[str, str] = {}
-    if not cat or not getattr(cat, "pm_units", None):
+    if not model:
         return mapping
 
-    # The catalog owns the truth: add/modify PmUnits there; the rule auto-picks it up.
-    for unit in getattr(cat, "pm_units", []):
-        kit_code = getattr(unit, "unit_name", None)
-        canons: Iterable[str] = getattr(unit, "canon_items", []) or []
-        if not kit_code:
-            continue
-        for canon in canons:
-            mapping.setdefault(canon.strip().upper(), kit_code)
+    try:
+        db = CatalogDB()
+        up = model.upper()
+        db_models = db.get_all_models()
+
+        candidates = [m for m in db_models if m and m in up]
+        if not candidates:
+            return mapping
+
+        # Prefer the most specific model token if multiple are present.
+        matched_model = sorted(candidates, key=lambda m: (-len(m), m))[0]
+
+        for unit_name in db.get_units_for_model(matched_model):
+            canons: Iterable[str] = db.get_items_for_unit(unit_name)
+            for canon in canons:
+                key = (canon or "").strip().upper()
+                if key:
+                    mapping.setdefault(key, unit_name)
+    except Exception:
+        return {}
+
     return mapping
 
 class KitLinkRule(RuleBase):
     name = "KitLinkRule"
-    _CACHE = {} 
+    _CACHE: Dict[str, Dict[str, str]] = {}
 
     def _get_cached_map(self, model: str) -> Dict[str, str]:
-        if model in self._CACHE:
-            return self._CACHE[model]
-        
-        cat = _ensure_catalog_for_model(model)
-        cmap = _canon_to_kit_map_from_catalog(cat)
-        
-        self._CACHE[model] = cmap
+        cache_key = (model or "").upper()
+        if cache_key in self._CACHE:
+            return self._CACHE[cache_key]
+
+        cmap = _canon_to_kit_map_from_db(model)
+        self._CACHE[cache_key] = cmap
         return cmap
 
     def apply(self, ctx: Context) -> None:
@@ -96,7 +59,7 @@ class KitLinkRule(RuleBase):
             if not finding.due:
                 continue
 
-            kit_code = cmap.get(canon)
+            kit_code = cmap.get((canon or "").strip().upper())
             if kit_code:
                 setattr(finding, "kit_code", kit_code)
             else:

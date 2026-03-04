@@ -1,22 +1,20 @@
 from __future__ import annotations
-from typing import List, Dict
+from typing import Dict
 from pmgen.rules.base import Context, RuleBase
-from pmgen.types import Finding
-from pmgen.catalog import part_kit_catalog as cat
+from pmgen.io.db_access import CatalogDB
 
 class QtyOverrideRule(RuleBase):
     name = "QtyOverrideRule"
-    
-    OVERRIDES: Dict[str, int] = {}
-    
+
     def __init__(self):
         try:
-            self.OVERRIDES[cat.FILTER_OZN_KCH_A08K.unit_name] = 2
-            self.OVERRIDES[cat.ASYS_ROLL_FEED_SFB_H44X.unit_name] = 2
-        except AttributeError:
-            pass
+            db_overrides = CatalogDB().get_qty_overrides()
+        except Exception:
+            db_overrides = {}
+
+        self.overrides: Dict[str, int] = db_overrides
 
     def apply(self, ctx: Context) -> None:
-        for kit, qty in ctx.kit_selection.items():
-            if kit in self.OVERRIDES:
-                ctx.kit_selection[kit] = self.OVERRIDES[kit]
+        for kit in list(ctx.kit_selection.keys()):
+            if kit in self.overrides:
+                ctx.kit_selection[kit] = self.overrides[kit]
