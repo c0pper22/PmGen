@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock
 from PyQt6.QtCore import Qt, QRegularExpression, QCoreApplication, QSettings
-from PyQt6.QtWidgets import QWidget, QToolBar, QLabel, QComboBox
+from PyQt6.QtWidgets import QWidget, QToolBar, QLabel, QComboBox, QVBoxLayout, QPlainTextEdit
 from PyQt6.QtGui import QStandardItemModel, QStandardItem
 
 # Import the classes we want to test
@@ -199,3 +199,82 @@ def test_generate_adds_serial_to_history_before_session_check(mock_main_window):
 
     assert window._id_combo.count() == 1
     assert window._id_combo.itemText(0) == "AB123"
+
+
+def test_show_about_uses_db_models(mock_main_window, monkeypatch):
+    """About dialog should source model count/list from CatalogDB."""
+    window = mock_main_window
+
+    class DialogProbe(QWidget):
+        instances = []
+
+        def __init__(self, parent=None, *args, **kwargs):
+            super().__init__(parent)
+            self._content_layout = QVBoxLayout(self)
+            self.executed = False
+            DialogProbe.instances.append(self)
+
+        def exec(self):
+            self.executed = True
+            return 0
+
+        def accept(self):
+            pass
+
+    class MockCatalogDB:
+        def get_all_models(self):
+            return ["Z900", "A100", "M500", "B200"]
+
+    monkeypatch.setattr("pmgen.ui.main_window.FramelessDialog", DialogProbe)
+    monkeypatch.setattr("pmgen.ui.main_window.CatalogDB", MockCatalogDB)
+
+    window._show_about()
+
+    dlg = DialogProbe.instances[-1]
+    assert dlg.executed is True
+
+    editors = dlg.findChildren(QPlainTextEdit)
+    assert editors
+    txt = editors[0].toPlainText()
+
+    assert "Supported models: 4" in txt
+    assert txt.index("A100") < txt.index("B200") < txt.index("M500") < txt.index("Z900")
+
+
+def test_show_about_db_failure_shows_zero(mock_main_window, monkeypatch):
+    """About dialog should still open and show zero models when DB read fails."""
+    window = mock_main_window
+
+    class DialogProbe(QWidget):
+        instances = []
+
+        def __init__(self, parent=None, *args, **kwargs):
+            super().__init__(parent)
+            self._content_layout = QVBoxLayout(self)
+            self.executed = False
+            DialogProbe.instances.append(self)
+
+        def exec(self):
+            self.executed = True
+            return 0
+
+        def accept(self):
+            pass
+
+    class FailingCatalogDB:
+        def get_all_models(self):
+            raise RuntimeError("db unavailable")
+
+    monkeypatch.setattr("pmgen.ui.main_window.FramelessDialog", DialogProbe)
+    monkeypatch.setattr("pmgen.ui.main_window.CatalogDB", FailingCatalogDB)
+
+    window._show_about()
+
+    dlg = DialogProbe.instances[-1]
+    assert dlg.executed is True
+
+    editors = dlg.findChildren(QPlainTextEdit)
+    assert editors
+    txt = editors[0].toPlainText()
+
+    assert "Supported models: 0" in txt

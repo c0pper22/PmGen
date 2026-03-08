@@ -33,6 +33,7 @@ from .components import (
 )
 from .highlighter import OutputHighlighter
 from .workers import BulkConfig, BulkRunner, SingleReportWorker
+from pmgen.io.db_access import CatalogDB
 from pmgen.io.http_client import get_customer_map_after_login
 from pmgen.updater.updater import UpdateWorker, perform_restart, CURRENT_VERSION
 from .inventory import InventoryTab
@@ -1229,8 +1230,10 @@ class MainWindow(QMainWindow):
         dlg.exec()
 
     def _show_about(self):
-        from pmgen.catalog.part_kit_catalog import REGISTRY
-        models = sorted([k for k, v in REGISTRY.items() if v is not None])
+        try:
+            models = sorted(CatalogDB().get_all_models())
+        except Exception:
+            models = []
         txt = f"PmGen\nVersion: {CURRENT_VERSION}\nSupported models: {len(models)}\n—\n"
         # Simple columns
         for i in range(0, len(models), 4): txt += "".join(s.ljust(12) for s in models[i:i+4]) + "\n"
