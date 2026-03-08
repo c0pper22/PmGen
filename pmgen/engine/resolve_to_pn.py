@@ -1,14 +1,3 @@
-"""Resolve PARTS_NAME_COM kit codes to actual PARTS_NO values.
-
-This module is a thin wrapper around pmgen.io.ribon_db — kept in the engine
-layer so callers can simply do:
-
-    from pmgen.engine.resolve_to_pn import resolve_with_rows
-
-    rows, pns = resolve_with_rows(selection)
-
-where `selection` is {PARTS_NAME_COM: qty}.
-"""
 from __future__ import annotations
 from typing import Dict, Tuple
 

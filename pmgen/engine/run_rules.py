@@ -1,12 +1,8 @@
 from __future__ import annotations
-
 from collections import defaultdict
-from typing import Dict, List, Optional, Tuple, Set
-import re
+from typing import Dict, List
 import logging
 from pmgen.types import PmItem, PmReport, Selection
-
-
 from pmgen.rules.base import Context
 from pmgen.rules.generic_life import GenericLifeRule
 from pmgen.rules.kit_link import KitLinkRule

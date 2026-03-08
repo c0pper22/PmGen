@@ -2,8 +2,6 @@ from __future__ import annotations
 import os
 import re
 from datetime import datetime
-
-# ReportLab Imports
 from reportlab.lib.pagesizes import LETTER
 from reportlab.lib import colors
 from reportlab.lib.units import inch
@@ -13,8 +11,6 @@ from reportlab.platypus import (
 )
 from reportlab.platypus.flowables import KeepTogether, HRFlowable
 from reportlab.platypus.doctemplate import LayoutError
-
-# New Imports for Inventory
 try:
     import pandas as pd
     from PyQt6.QtCore import QStandardPaths
@@ -43,7 +39,6 @@ def _load_inventory_map():
         if not os.path.exists(path): return {}
         
         df = pd.read_csv(path)
-        # Normalization matches inventory.py
         if "Part Number" in df.columns:
             df["Part Number"] = df["Part Number"].astype(str).str.strip().str.upper()
         if "Unit Name" in df.columns:
@@ -94,8 +89,8 @@ def _make_inventory_check_table(rows):
         ("FONT", (0, 0), (-1, 0), "Helvetica-Bold"),
         ("FONTSIZE", (0, 0), (-1, 0), 10),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#111827")), 
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E5E7EB")), # Gray Header
-        ("ALIGN", (0, 0), (2, -1), "CENTER"), # Center numbers
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E5E7EB")),
+        ("ALIGN", (0, 0), (2, -1), "CENTER"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#9CA3AF")),
         ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#D1D5DB")),
@@ -107,14 +102,13 @@ def _make_inventory_check_table(rows):
         data.append(row_data)
         
         c_code = r[5]
-        if c_code == 0:   # Red (0 stock)
+        if c_code == 0:
              bg = colors.HexColor("#FECACA") 
-        elif c_code == 1: # Yellow (partial)
+        elif c_code == 1:
              bg = colors.HexColor("#FEF3C7") 
-        else:             # Green (full)
+        else:
              bg = colors.HexColor("#DCFCE7") 
              
-        # i + 1 because row 0 is header
         style_cmds.append(('BACKGROUND', (0, i+1), (-1, i+1), bg))
 
     tbl = Table(data, colWidths=[0.8*inch, 0.8*inch, 0.8*inch, 2.8*inch, 2.3*inch], hAlign="LEFT")
@@ -134,15 +128,12 @@ def _make_toc_grid(toc_rows, text_style, cols=4):
     col_width = (7.0 / cols) * inch
 
     for index, (serial, model, score, unpack_str) in enumerate(toc_rows):
-        # 1. Get base color and apply alpha (0.3 for a lighter, pastel look)
         base_color = _pct_color(score)
         bg_color = colors.Color(base_color.red, base_color.green, base_color.blue, alpha=0.3)
         
-        # 2. Since the background is light, we use dark text for everything
         text_hex = "#111827"
         muted_hex = "#6B7280"
         
-        # 3. Create the cell content
         extra = f'<br/><font size="7" color="{muted_hex}">Unpacked: {unpack_str}</font>' if unpack_str else ""
         link_text = (
             f'<a href="#{serial}" color="{text_hex}"><u>{serial}</u></a> '
@@ -152,7 +143,6 @@ def _make_toc_grid(toc_rows, text_style, cols=4):
         p = Paragraph(link_text, text_style)
         row_buffer.append(p)
         
-        # Track position for background styling
         curr_col = len(row_buffer) - 1
         curr_row = len(data)
         cell_styles.append((curr_col, curr_row, bg_color))
@@ -178,10 +168,9 @@ def _make_toc_grid(toc_rows, text_style, cols=4):
         ("RIGHTPADDING", (0, 0), (-1, -1), 4),
         ("TOPPADDING", (0, 0), (-1, -1), 6),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#D1D5DB")), # Light gray grid
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#D1D5DB")),
     ]
     
-    # Apply the lightened background colors
     for col, row, color in cell_styles:
         table_cmds.append(("BACKGROUND", (col, row), (col, row), color))
     
@@ -203,7 +192,6 @@ def write_final_summary_pdf(
     styles.add(ParagraphStyle(name="Section", parent=styles["Heading2"], fontName="Helvetica-Bold", fontSize=12, leading=14, textColor=colors.HexColor("#111827"), spaceBefore=10, spaceAfter=6))
     styles.add(ParagraphStyle(name="Muted", parent=styles["BodyText"], fontName="Helvetica-Oblique", fontSize=9, textColor=colors.HexColor("#6B7280"), spaceAfter=6))
     
-    # --- UPDATED STYLE: High Visibility Serial Header ---
     styles.add(ParagraphStyle(
         name="SerialHeader", 
         parent=styles["BodyText"], 
@@ -216,17 +204,12 @@ def write_final_summary_pdf(
         spaceBefore=12, 
         spaceAfter=8
     ))
-    # Style specifically for TOC links (Centered for grid look)
     styles.add(ParagraphStyle(name="TOCLink", parent=styles["BodyText"], fontName="Helvetica", fontSize=10, textColor=colors.blue, alignment=1)) # 1=Center
 
     # --- 1. PRE-CALCULATION ---
-    
     total_over_upn = {}
     total_thr_upn = {}
-    
     individual_serials_story = [] 
-
-    # Collect TOC data
     toc_data = []
 
     for r in top:
@@ -236,11 +219,9 @@ def write_final_summary_pdf(
 
         customer = r.get("customer_name", "")   
         
-        # Get Unpacking date if available
         unpacking_date = r.get("unpacking_date")
         unpack_str = str(unpacking_date) if unpacking_date else ""
 
-        # Add to TOC list (extended tuple)
         toc_data.append((serial, model, best_used, unpack_str))
 
         c = _pct_color(best_used)
@@ -324,8 +305,6 @@ def write_final_summary_pdf(
             except LayoutError: individual_serials_story.append(tbl_thr)
         else: individual_serials_story.append(Paragraph("(none)", styles["Muted"]))
         
-        # --- UPDATED SEPARATOR ---
-        # Instead of just a Spacer, we add a dashed line to visually cut the section
         individual_serials_story.append(Spacer(1, 0.2 * inch))
         individual_serials_story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#9CA3AF"), dash=(4, 4)))
         individual_serials_story.append(Spacer(1, 0.2 * inch))
@@ -333,7 +312,6 @@ def write_final_summary_pdf(
     # --- 2. BUILD THE FINAL PDF STORY ---
     story = []
 
-    # A. Header
     story.append(Paragraph("Bulk Final Summary", styles["H1"]))
     story.append(_hline())
 
@@ -347,7 +325,6 @@ def write_final_summary_pdf(
     for ml in meta_lines: story.append(Paragraph(ml, styles["Meta"]))
     story.append(Spacer(1, 0.15 * inch))
 
-    # *** ADD COMPACT TOC GRID ***
     story.append(Paragraph("Quick Links", styles["Section"]))
     if toc_data:
         story.append(_make_toc_grid(toc_data, styles["TOCLink"], cols=4))
@@ -359,7 +336,6 @@ def write_final_summary_pdf(
     # B. INVENTORY CHECK (Combined & Factored)
     inv_map = _load_inventory_map()
     bulk_alerts = []
-    # Merge Over 100 and Threshold needs
     combined_needed = total_over_upn.copy()
     for k, v in total_thr_upn.items():
         combined_needed[k] = combined_needed.get(k, 0) + v
@@ -367,7 +343,7 @@ def write_final_summary_pdf(
     if not inv_map and combined_needed:
         bulk_alerts.append("Inventory cache is empty or missing. All items marked as order needed.")
 
-    # [INVENTORY LOGIC PRESERVED EXACTLY AS REQUESTED]
+    # [INVENTORY LOGIC KEEP PRESERVED EXACTLY AS IS, SINCE THIS IS A CRITICAL SECTION WITH COMPLEX MATCHING]
     inv_rows = []
     if combined_needed:
         for unit, needed_qty in sorted(combined_needed.items(), key=lambda k: (k[0][0], k[0][1])):
