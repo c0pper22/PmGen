@@ -709,8 +709,23 @@ class MainWindow(QMainWindow):
 
     def _load_id_history(self):
         h = QSettings().value(self.HISTORY_KEY, [], list)
-        if not isinstance(h, list): h = list(h)
-        self._set_history([x for x in h if isinstance(x, str) and x])
+        if not isinstance(h, list):
+            h = list(h)
+
+        cleaned: list[str] = []
+        seen = set()
+        for raw in h:
+            if not isinstance(raw, str):
+                continue
+            serial = raw.strip().upper()
+            if not serial or serial in seen:
+                continue
+            seen.add(serial)
+            cleaned.append(serial)
+            if len(cleaned) >= self.MAX_HISTORY:
+                break
+
+        self._set_history(cleaned)
 
     def _save_id_history(self):
         QSettings().setValue(self.HISTORY_KEY, [self._id_combo.itemText(i) for i in range(self._id_combo.count())])
@@ -718,6 +733,29 @@ class MainWindow(QMainWindow):
     def _set_history(self, items: list[str]):
         self._id_combo.clear()
         for it in items: self._id_combo.addItem(it)
+
+    def _upsert_id_history(self, serial: str) -> str:
+        """Adds a serial to history, keeping newest-first order and a fixed max size."""
+        normalized = (serial or "").strip().upper()
+        if not normalized:
+            return ""
+
+        items = [normalized]
+        seen = {normalized}
+
+        for i in range(self._id_combo.count()):
+            existing = (self._id_combo.itemText(i) or "").strip().upper()
+            if not existing or existing in seen:
+                continue
+            seen.add(existing)
+            items.append(existing)
+            if len(items) >= self.MAX_HISTORY:
+                break
+
+        self._set_history(items)
+        self._id_combo.setEditText(normalized)
+        self._save_id_history()
+        return normalized
 
     def _reset_update_thread(self):
             """
@@ -882,7 +920,7 @@ class MainWindow(QMainWindow):
         if getattr(self, '_single_thread', None) is not None and self._single_thread.isRunning():
             return 
 
-        serial = self._id_combo.currentText().strip()
+        serial = self._upsert_id_history(self._id_combo.currentText())
         if not serial:
             return
 
@@ -994,6 +1032,9 @@ class MainWindow(QMainWindow):
     @pyqtSlot(str)
     def _on_bulk_inspect_requested(self, serial):
         """Called when a Bulk Tab 'Inspect' context menu is clicked."""
+        serial = self._upsert_id_history(serial)
+        if not serial:
+            return
         self.tabs.setCurrentIndex(0)
         self._id_combo.setEditText(serial)
         self._on_generate_clicked()

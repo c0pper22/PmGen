@@ -33,12 +33,10 @@ def mock_main_window(qtbot, monkeypatch):
         def __init__(self, *args, **kwargs): pass
         
         def create_secondary_bar(self, parent):
-            # Inject labels/widgets that MainWindow expects the factory to create
             parent.user_label = QLabel(parent)
             
-            # Use a REAL QComboBox here so MainWindow.closeEvent() doesn't 
-            # crash trying to pickle a MagicMock when saving settings!
-            parent._id_combo = QComboBox(parent) 
+            parent._id_combo = QComboBox(parent)
+            parent._id_combo.setEditable(True)
             
             return QWidget(parent)
             
@@ -48,7 +46,6 @@ def mock_main_window(qtbot, monkeypatch):
     class MockInventoryTab(QWidget):
         def __init__(self, parent=None, **kwargs):
             super().__init__(parent)
-            # Prevent closeEvent from crashing when it tries to read the inventory cache
             self.model = MagicMock()
             self.model.get_dataframe.return_value = None
             
@@ -76,12 +73,10 @@ def test_proxy_model_filtering():
     proxy = BulkSortFilterProxyModel()
     proxy.setSourceModel(source)
     
-    # 1. Test filtering by Serial
     proxy.setFilterRegularExpression(QRegularExpression("123"))
     assert proxy.rowCount() == 1
     assert proxy.data(proxy.index(0, 1)) == "SN123"
 
-    # 2. Test filtering by Customer (Case Insensitive)
     proxy.setFilterRegularExpression(QRegularExpression("corpb"))
     assert proxy.rowCount() == 1
     assert proxy.data(proxy.index(0, 3)) == "CorpB"
@@ -113,10 +108,8 @@ def test_proxy_model_sorting_status():
     proxy = BulkSortFilterProxyModel()
     proxy.setSourceModel(source)
     
-    # Sort ascending by the status column
     proxy.sort(source.status_col, Qt.SortOrder.AscendingOrder)
     
-    # Expected custom priority: Done (0), Failed (1), Filtered (2), Queued (3)
     assert proxy.data(proxy.index(0, source.status_col)) == "Done"
     assert proxy.data(proxy.index(1, source.status_col)) == "Failed"
     assert proxy.data(proxy.index(2, source.status_col)) == "Filtered"
@@ -133,11 +126,8 @@ def test_proxy_model_sorting_results():
     proxy = BulkSortFilterProxyModel()
     proxy.setSourceModel(source)
     
-    # Sort ascending by result column
     proxy.sort(source.result_col, Qt.SortOrder.AscendingOrder)
     
-    # The logic assigns "-2.0" to "—", making it smaller than 5.0. 
-    # Therefore, it correctly sorts to the top in ascending order.
     assert proxy.data(proxy.index(0, source.result_col)) == "—"
     assert proxy.data(proxy.index(1, source.result_col)) == "5.0%"
     assert proxy.data(proxy.index(2, source.result_col)) == "10.5%"
@@ -181,3 +171,31 @@ def test_mainwindow_tab_close_protection(mock_main_window, monkeypatch):
     window._on_tab_close_requested(1)
     
     mock_remove.assert_not_called()
+
+
+def test_mainwindow_upsert_id_history_dedupes_and_caps(mock_main_window):
+    """Serial history should be newest-first, de-duplicated, and capped to MAX_HISTORY."""
+    window = mock_main_window
+
+    for i in range(window.MAX_HISTORY + 5):
+        window._upsert_id_history(f"sn{i}")
+
+    assert window._id_combo.count() == window.MAX_HISTORY
+    assert window._id_combo.itemText(0) == "SN29"
+    assert window._id_combo.itemText(window._id_combo.count() - 1) == "SN5"
+
+    window._upsert_id_history("sn10")
+    assert window._id_combo.count() == window.MAX_HISTORY
+    assert window._id_combo.itemText(0) == "SN10"
+
+
+def test_generate_adds_serial_to_history_before_session_check(mock_main_window):
+    """Generate click should populate dropdown history even if user is not signed in."""
+    window = mock_main_window
+    window._session = None
+
+    window._id_combo.setEditText("ab123")
+    window._on_generate_clicked()
+
+    assert window._id_combo.count() == 1
+    assert window._id_combo.itemText(0) == "AB123"
