@@ -38,6 +38,7 @@ from pmgen.io.http_client import get_customer_map_after_login
 from pmgen.updater.updater import UpdateWorker, perform_restart, CURRENT_VERSION
 from .inventory import InventoryTab
 from .factory import UIFactory
+from .catalog_editor import CatalogEditorWindow
 
 
 SERVICE_NAME = "PmGen"
@@ -519,6 +520,7 @@ class MainWindow(QMainWindow):
         self._current_user: str = ""
         self._auto_login_attempted: bool = False
         self._session = None
+        self._catalog_editor_window: CatalogEditorWindow | None = None
 
         # Global tracking + event filter
         app = QApplication.instance()
@@ -1243,6 +1245,17 @@ class MainWindow(QMainWindow):
         btn = QPushButton("OK", dlg); btn.clicked.connect(dlg.accept)
         dlg._content_layout.addWidget(t); dlg._content_layout.addWidget(btn)
         dlg.exec()
+
+    @safe_slot
+    def _open_catalog_editor(self, *args):
+        if self._catalog_editor_window is None:
+            self._catalog_editor_window = CatalogEditorWindow(self._icon_dir, self)
+            self._catalog_editor_window.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+            self._catalog_editor_window.destroyed.connect(lambda *_: setattr(self, "_catalog_editor_window", None))
+
+        self._catalog_editor_window.show()
+        self._catalog_editor_window.raise_()
+        self._catalog_editor_window.activateWindow()
 
     # =========================================================================
     #  Auth & Event Logic

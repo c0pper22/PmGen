@@ -278,3 +278,28 @@ def test_show_about_db_failure_shows_zero(mock_main_window, monkeypatch):
     txt = editors[0].toPlainText()
 
     assert "Supported models: 0" in txt
+
+
+def test_open_catalog_editor_reuses_single_window(mock_main_window, monkeypatch):
+    """Catalog editor window should be reused instead of recreated on repeated opens."""
+    window = mock_main_window
+
+    class MockCatalogEditorWindow(QWidget):
+        instances = []
+
+        def __init__(self, icon_dir, parent=None):
+            super().__init__(parent)
+            self.icon_dir = icon_dir
+            MockCatalogEditorWindow.instances.append(self)
+
+    monkeypatch.setattr("pmgen.ui.main_window.CatalogEditorWindow", MockCatalogEditorWindow)
+
+    window._open_catalog_editor()
+    first = window._catalog_editor_window
+
+    window._open_catalog_editor()
+    second = window._catalog_editor_window
+
+    assert first is not None
+    assert second is first
+    assert len(MockCatalogEditorWindow.instances) == 1

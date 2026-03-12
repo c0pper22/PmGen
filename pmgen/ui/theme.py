@@ -37,6 +37,32 @@ QCheckBox#DialogCheckbox::indicator:unchecked { image: none; }
 /* Secondary bar */
 #SecondaryBar { background: #202225; border: 1px solid #000000; border-radius: 0; padding: 6px; }
 
+/* Generic dark inputs/editors/lists */
+QLineEdit,
+QPlainTextEdit,
+QTextEdit,
+QListWidget {
+    background: #1e1f22;
+    color: #e9e9e9;
+    border: 1px solid #000000;
+    selection-background-color: #3a3d41;
+    selection-color: #e9e9e9;
+}
+
+QLineEdit:focus,
+QPlainTextEdit:focus,
+QTextEdit:focus,
+QListWidget:focus {
+    background: #1e1f22;
+    color: #e9e9e9;
+    border: 1px solid #44474d;
+}
+
+QListWidget::item:selected {
+    background: #3a3d41;
+    color: #e9e9e9;
+}
+
 /* Keep support for QLineEdit if used anywhere else */
 QLineEdit#IdInput { background: #000000; color: #e9e9e9; border: 1px solid #000000; border-radius: 0; padding: 6px 8px; font-weight: 800 }
 QLineEdit#IdInput:focus { border: 1px solid #000000; }

@@ -3,6 +3,7 @@ import re
 import os
 from typing import Optional, Iterable, Set, Tuple, List
 from pmgen.io.http_client import get_db_path
+from pmgen.canon.regex_tokens import expand_regex_tokens
 
 _MAPPINGS_CACHE: Optional[List[Tuple[str, str]]] = None
 
@@ -17,7 +18,7 @@ def reload_mappings_cache():
     try:
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
-        cur.execute("SELECT pattern, template FROM canon_mappings")
+        cur.execute("SELECT pattern, template FROM canon_mappings ORDER BY pattern, id")
         mappings = cur.fetchall()
         conn.close()
         _MAPPINGS_CACHE = mappings
@@ -39,11 +40,14 @@ def canon_unit(raw: str) -> Optional[str]:
 
     for pattern_str, template in mappings:
         try:
-            pat = re.compile(pattern_str, re.I)
+            expanded_pattern, unknown_tokens, _used_tokens = expand_regex_tokens(pattern_str)
+            if unknown_tokens:
+                continue
+            pat = re.compile(expanded_pattern, re.I)
             m = pat.match(s)
             if m:
                 return template.format(**m.groupdict())
-        except re.error:
+        except (re.error, KeyError, ValueError):
             continue
             
     return None

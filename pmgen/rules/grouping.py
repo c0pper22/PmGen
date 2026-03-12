@@ -71,6 +71,10 @@ class UnitGroupingRule(RuleBase):
     name = "UnitGroupingRule"
     _PER_COLOR_CACHE: Optional[Set[str]] = None
 
+    @classmethod
+    def clear_cache(cls):
+        cls._PER_COLOR_CACHE = None
+
     def _get_per_color_units(self) -> Set[str]:
         if self._PER_COLOR_CACHE is not None:
             return self._PER_COLOR_CACHE

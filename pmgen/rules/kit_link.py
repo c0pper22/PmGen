@@ -39,6 +39,10 @@ class KitLinkRule(RuleBase):
     name = "KitLinkRule"
     _CACHE: Dict[str, Dict[str, str]] = {}
 
+    @classmethod
+    def clear_cache(cls):
+        cls._CACHE.clear()
+
     def _get_cached_map(self, model: str) -> Dict[str, str]:
         cache_key = (model or "").upper()
         if cache_key in self._CACHE:

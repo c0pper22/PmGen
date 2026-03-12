@@ -88,6 +88,10 @@ class UIFactory:
         act_about = QAction("About", window)
         act_about.triggered.connect(window._show_about)
         settings_menu.addAction(act_about)
+
+        act_catalog_editor = QAction("Catalog Editor", window)
+        act_catalog_editor.triggered.connect(window._open_catalog_editor)
+        settings_menu.addAction(act_catalog_editor)
         
         settings_btn.setMenu(settings_menu)
 

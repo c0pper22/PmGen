@@ -15,10 +15,20 @@ os.environ.setdefault("QT_AUTO_SCREEN_SCALE_FACTOR", "1")
 def bootstrap_database():
     target_path = get_db_path()
 
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        base_dir = sys._MEIPASS
+    elif getattr(sys, 'frozen', False):
+        base_dir = os.path.dirname(sys.executable)
+    else:
+        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
+    source_path = os.path.join(base_dir, "catalog_manager.db")
+    same_path = os.path.abspath(source_path) == os.path.abspath(target_path)
+
     # =========================================================================
     # [TEMPORARY] FORCE FRESH DATABASE ON STARTUP
     # TODO: Remove the following block when you want user data to persist across sessions!
-    if os.path.exists(target_path):
+    if os.path.exists(target_path) and not same_path:
         try:
             os.remove(target_path)
             logging.info(f"Deleted old database at {target_path} to force a fresh copy.")
@@ -29,14 +39,9 @@ def bootstrap_database():
     if os.path.exists(target_path):
         return
 
-    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-        base_dir = sys._MEIPASS
-    elif getattr(sys, 'frozen', False):
-        base_dir = os.path.dirname(sys.executable)
-    else:
-        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-
-    source_path = os.path.join(base_dir, "catalog_manager.db")
+    if same_path:
+        logging.info("Using working-directory database directly; bootstrap copy skipped.")
+        return
 
     if os.path.exists(source_path):
         try:

@@ -46,7 +46,14 @@ except Exception:  # pragma: no cover
     keyring = None
 
 def get_db_path():
-    """Returns the path to the database in the user's AppData folder."""
+    """
+    Returns runtime database path.
+    - Source/Python runs: use current working directory.
+    - Frozen/compiled runs: use AppData location.
+    """
+    if not getattr(sys, "frozen", False):
+        return os.path.join(os.getcwd(), "catalog_manager.db")
+
     app_data = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation)
     if not os.path.exists(app_data):
         os.makedirs(app_data)
