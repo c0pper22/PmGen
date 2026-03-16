@@ -5,7 +5,6 @@ import time
 import subprocess
 import logging
 import traceback
-from datetime import datetime
 
 # -----------------------------------------------------------------------------
 # Configuration
@@ -14,6 +13,47 @@ LOG_DIR = os.path.join(os.path.expanduser("~"), ".indybiz_pm")
 LOG_FILE = os.path.join(LOG_DIR, "updater.log")
 MAX_RETRIES = 60
 RETRY_DELAY = 1.0
+
+
+def resolve_payload_root(src_dir, target_exe_name):
+    """
+    Finds the directory inside src_dir that contains the target executable.
+    This handles ZIPs that may have an extra top-level folder.
+    """
+    direct_exe = os.path.join(src_dir, target_exe_name)
+    if os.path.exists(direct_exe):
+        return src_dir
+
+    for root, _, files in os.walk(src_dir):
+        if target_exe_name in files:
+            return root
+
+    return src_dir
+
+
+def replace_internal_folder(src_dir, dst_dir):
+    """
+    Replaces destination _internal folder with source _internal folder.
+    This prevents stale runtime files from previous builds.
+    """
+    src_internal = os.path.join(src_dir, "_internal")
+    dst_internal = os.path.join(dst_dir, "_internal")
+
+    if not os.path.exists(src_internal):
+        logging.warning("Source update does not contain _internal; skipping _internal replacement.")
+        return 0
+
+    if os.path.exists(dst_internal):
+        logging.info("Removing existing destination _internal folder...")
+        shutil.rmtree(dst_internal)
+
+    logging.info("Copying new _internal folder...")
+    shutil.copytree(src_internal, dst_internal)
+
+    files_copied = 0
+    for _, _, files in os.walk(src_internal):
+        files_copied += len(files)
+    return files_copied
 
 def setup_logging():
     """Sets up a standalone logger for the updater process."""
@@ -48,7 +88,12 @@ def install_update(src_dir, dst_dir):
     files_copied = 0
     
     try:
+        files_copied += replace_internal_folder(src_dir, dst_dir)
+
         for root, dirs, files in os.walk(src_dir):
+            if root == src_dir and "_internal" in dirs:
+                dirs.remove("_internal")
+
             rel_path = os.path.relpath(root, src_dir)
             target_path = os.path.join(dst_dir, rel_path)
 
@@ -59,10 +104,22 @@ def install_update(src_dir, dst_dir):
                 src_file = os.path.join(root, file)
                 dst_file = os.path.join(target_path, file)
 
-                if "updater.exe" in file.lower():
-                    continue
-
-                shutil.copy2(src_file, dst_file)
+                # Allow updater.exe to be updated. The main app stages the running updater
+                # to a temp location, so the installed updater.exe is safe to overwrite.
+                try:
+                    shutil.copy2(src_file, dst_file)
+                except PermissionError:
+                    if file.lower() == "updater.exe" and os.path.exists(dst_file):
+                        try:
+                            backup_path = dst_file + ".old"
+                            if os.path.exists(backup_path):
+                                os.remove(backup_path)
+                            os.replace(dst_file, backup_path)
+                            shutil.copy2(src_file, dst_file)
+                        except Exception:
+                            raise
+                    else:
+                        raise
                 files_copied += 1
         
         return True, f"Successfully copied {files_copied} files."
@@ -85,6 +142,10 @@ def main():
     src_dir = sys.argv[1]
     dst_dir = sys.argv[2]
     target_exe_name = sys.argv[3]
+    src_dir = resolve_payload_root(src_dir, target_exe_name)
+
+    logging.info(f"Resolved payload source directory: {src_dir}")
+
     target_exe_path = os.path.join(dst_dir, target_exe_name)
 
     success = False

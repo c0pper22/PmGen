@@ -4,9 +4,10 @@ import subprocess
 import zipfile
 import shutil
 import tempfile
+import time
 import requests
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional
 
 from packaging import version
 from PyQt6.QtCore import QObject, pyqtSignal
@@ -14,9 +15,42 @@ from PyQt6.QtCore import QObject, pyqtSignal
 # --- CONFIGURATION ---
 GITHUB_REPO = "c0pper22/PmGen"
 ASSET_NAME = "PmGen.zip"
-CURRENT_VERSION = "2.8.8"
+CURRENT_VERSION = "2.8.9"
 USER_AGENT = f"PmGen-Updater/{CURRENT_VERSION}"
 UPDATER_EXE_NAME = "updater.exe"
+
+
+def _find_updater_exe_in_tree(root_dir: Path) -> Optional[Path]:
+    """Find an updater.exe within root_dir, handling extra top-level ZIP folders."""
+    try:
+        direct = root_dir / UPDATER_EXE_NAME
+        if direct.exists():
+            return direct
+
+        candidates = [p for p in root_dir.rglob(UPDATER_EXE_NAME) if p.is_file()]
+        if candidates:
+            # Prefer the shallowest path in case multiple are present.
+            candidates.sort(key=lambda p: (len(p.parts), str(p).lower()))
+            return candidates[0]
+    except Exception:
+        # Best-effort; caller will fall back to other sources.
+        return None
+
+    return None
+
+
+def _stage_updater_exe(updater_source: Path) -> Optional[Path]:
+    """Copy updater.exe to a stable temp location and return the staged path."""
+    try:
+        stage_dir = Path(tempfile.gettempdir()) / "pmgen_updater_stage"
+        stage_dir.mkdir(parents=True, exist_ok=True)
+
+        staged_path = stage_dir / f"updater_{int(time.time())}.exe"
+        shutil.copy2(updater_source, staged_path)
+        return staged_path
+    except Exception:
+        logging.exception("Failed to stage updater executable")
+        return None
 
 class UpdateWorker(QObject):
     """
@@ -143,10 +177,23 @@ def perform_restart(zip_path_str: str, temp_extract_dir_str: str) -> None:
     current_exe = Path(sys.executable)
     current_dir = current_exe.parent
     exe_name = current_exe.name
-    updater_exe = current_dir / UPDATER_EXE_NAME
 
-    if not updater_exe.exists():
-        logging.critical(f"Updater executable not found at: {updater_exe}")
+    # Prefer an updater shipped in the extracted update payload so the updater can be patched.
+    temp_extract_dir = Path(temp_extract_dir_str)
+    updater_source = _find_updater_exe_in_tree(temp_extract_dir)
+    if updater_source is None:
+        updater_source = current_dir / UPDATER_EXE_NAME
+        if not updater_source.exists():
+            logging.critical(
+                "Updater executable not found in update payload or install directory. "
+                f"Looked in: {temp_extract_dir} and {current_dir}"
+            )
+            return
+
+    # Stage updater to temp before launching. This allows it to overwrite the installed updater.exe.
+    staged_updater = _stage_updater_exe(updater_source)
+    if staged_updater is None or not staged_updater.exists():
+        logging.critical("Failed to stage updater executable; aborting update restart.")
         return
 
     zip_path = Path(zip_path_str)
@@ -159,7 +206,7 @@ def perform_restart(zip_path_str: str, temp_extract_dir_str: str) -> None:
     logging.info("Launching external updater and exiting...")
 
     subprocess.Popen(
-        [str(updater_exe), temp_extract_dir_str, str(current_dir), exe_name],
+        [str(staged_updater), temp_extract_dir_str, str(current_dir), exe_name],
         cwd=str(current_dir)
     )
     
