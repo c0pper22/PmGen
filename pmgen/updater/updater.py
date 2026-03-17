@@ -1,10 +1,14 @@
 import sys
+import os
 import logging
 import subprocess
 import zipfile
 import shutil
 import tempfile
 import time
+import hashlib
+import re
+import uuid
 import requests
 from pathlib import Path
 from typing import Optional
@@ -18,6 +22,7 @@ ASSET_NAME = "PmGen.zip"
 CURRENT_VERSION = "2.8.9"
 USER_AGENT = f"PmGen-Updater/{CURRENT_VERSION}"
 UPDATER_EXE_NAME = "updater.exe"
+CHECKSUM_SUFFIX = ".sha256"
 
 
 def _find_updater_exe_in_tree(root_dir: Path) -> Optional[Path]:
@@ -45,12 +50,62 @@ def _stage_updater_exe(updater_source: Path) -> Optional[Path]:
         stage_dir = Path(tempfile.gettempdir()) / "pmgen_updater_stage"
         stage_dir.mkdir(parents=True, exist_ok=True)
 
-        staged_path = stage_dir / f"updater_{int(time.time())}.exe"
+        staged_path = stage_dir / f"updater_{uuid.uuid4().hex}.exe"
         shutil.copy2(updater_source, staged_path)
         return staged_path
     except Exception:
         logging.exception("Failed to stage updater executable")
         return None
+
+
+def _new_update_session_dir() -> Path:
+    root = Path(tempfile.gettempdir()) / "pmgen_updates"
+    root.mkdir(parents=True, exist_ok=True)
+    session_dir = root / f"session_{uuid.uuid4().hex}"
+    session_dir.mkdir(parents=True, exist_ok=True)
+    return session_dir
+
+
+def _compute_sha256(file_path: Path) -> str:
+    digest = hashlib.sha256()
+    with open(file_path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest().lower()
+
+
+def _parse_checksum_text(content: str) -> Optional[str]:
+    match = re.search(r"\b([A-Fa-f0-9]{64})\b", content or "")
+    if not match:
+        return None
+    return match.group(1).lower()
+
+
+def _fetch_expected_checksum(url: str, headers: dict[str, str]) -> str:
+    checksum_url = f"{url}{CHECKSUM_SUFFIX}"
+    response = requests.get(checksum_url, headers=headers, timeout=10)
+    response.raise_for_status()
+    checksum = _parse_checksum_text(response.text)
+    if not checksum:
+        raise ValueError(f"Checksum file did not contain a valid SHA-256: {checksum_url}")
+    return checksum
+
+
+def _safe_extract_zip(zip_ref: zipfile.ZipFile, destination: Path, progress_cb) -> None:
+    destination_resolved = destination.resolve()
+    members = zip_ref.infolist()
+    total_files = len(members)
+
+    for index, member in enumerate(members):
+        member_target = (destination / member.filename).resolve()
+        try:
+            member_target.relative_to(destination_resolved)
+        except ValueError:
+            raise ValueError(f"Unsafe path in update archive: {member.filename}")
+        zip_ref.extract(member, destination)
+        if total_files > 0:
+            pct = int(((index + 1) / total_files) * 100)
+            progress_cb(pct)
 
 class UpdateWorker(QObject):
     """
@@ -112,8 +167,8 @@ class UpdateWorker(QObject):
         logging.info(f"Downloading update from: {url}")
         
         try:
-            temp_dir = Path(tempfile.gettempdir())
-            zip_path = temp_dir / "pmgen_update.zip"
+            session_dir = _new_update_session_dir()
+            zip_path = session_dir / ASSET_NAME
 
             with requests.get(url, headers=self.headers, stream=True, timeout=30) as r:
                 r.raise_for_status()
@@ -129,6 +184,13 @@ class UpdateWorker(QObject):
                                 pct = int((downloaded / total_size) * 100)
                                 self.download_progress.emit(pct)
 
+            expected_checksum = _fetch_expected_checksum(url, self.headers)
+            actual_checksum = _compute_sha256(zip_path)
+            if actual_checksum != expected_checksum:
+                raise ValueError(
+                    f"Checksum validation failed. expected={expected_checksum} actual={actual_checksum}"
+                )
+
             logging.info("Download complete.")
             self.download_finished.emit(str(zip_path))
 
@@ -140,7 +202,7 @@ class UpdateWorker(QObject):
         """Extracts the downloaded ZIP to a temporary folder."""
         zip_path = Path(zip_path_str)
         try:
-            temp_extract_dir = Path(tempfile.gettempdir()) / "pmgen_new_files"
+            temp_extract_dir = zip_path.parent / "extracted"
 
             if temp_extract_dir.exists():
                 shutil.rmtree(temp_extract_dir, ignore_errors=True)
@@ -149,14 +211,7 @@ class UpdateWorker(QObject):
             logging.info(f"Extracting to {temp_extract_dir}")
             
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                members = zip_ref.infolist()
-                total_files = len(members)
-
-                for i, member in enumerate(members):
-                    zip_ref.extract(member, temp_extract_dir)
-                    if total_files > 0:
-                        pct = int(((i + 1) / total_files) * 100)
-                        self.extraction_progress.emit(pct)
+                _safe_extract_zip(zip_ref, temp_extract_dir, self.extraction_progress.emit)
 
             self.extraction_finished.emit(str(zip_path), str(temp_extract_dir))
 
@@ -205,8 +260,10 @@ def perform_restart(zip_path_str: str, temp_extract_dir_str: str) -> None:
 
     logging.info("Launching external updater and exiting...")
 
+    session_id = Path(temp_extract_dir_str).parent.name
+
     subprocess.Popen(
-        [str(staged_updater), temp_extract_dir_str, str(current_dir), exe_name],
+        [str(staged_updater), temp_extract_dir_str, str(current_dir), exe_name, str(os.getpid()), session_id],
         cwd=str(current_dir)
     )
     

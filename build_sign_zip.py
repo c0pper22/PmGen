@@ -3,6 +3,7 @@ import subprocess
 import getpass
 import glob
 import zipfile
+import hashlib
 
 def get_password(pfx_path):
     password = getpass.getpass(prompt=f"Enter password for {pfx_path}: ")
@@ -66,6 +67,21 @@ def zip_directory(folder_path, output_zip):
                 zipf.write(file_full_path, arcname)
     print(f"Package created: {os.path.abspath(output_zip)}")
 
+def compute_sha256(file_path):
+    digest = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest().lower()
+
+def write_sha256_file(target_file):
+    checksum = compute_sha256(target_file)
+    sha_path = f"{target_file}.sha256"
+    with open(sha_path, "w", encoding="utf-8") as f:
+        f.write(f"{checksum}  {os.path.basename(target_file)}\n")
+    print(f"Checksum created: {os.path.abspath(sha_path)}")
+    return sha_path
+
 if __name__ == "__main__":
     DIST_DIR = "dist/PmGen"
     PFX_FILE = "./helpers/IBSCert.pfx"
@@ -95,4 +111,5 @@ if __name__ == "__main__":
         exit(1)
 
     zip_directory(DIST_DIR, ZIP_NAME)
+    write_sha256_file(ZIP_NAME)
     print("\nPipeline Complete!")
